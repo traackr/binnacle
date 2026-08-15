@@ -22,8 +22,10 @@ package config
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
 
 // StatePresent represents the present state
@@ -48,6 +50,13 @@ func LoadAndValidateFromViper() (*BinnacleConfig, error) {
 	}
 
 	config.ConfigFile = viper.ConfigFileUsed()
+
+	// viper lowercases every key, which corrupts case-sensitive Helm value keys
+	// (e.g. nameOverride, serviceAccount). Re-read the raw `values:` blocks with
+	// yaml.v3 (case-preserving) and use those instead of viper's decoded maps.
+	if err := reparseChartValues(&config); err != nil {
+		return nil, err
+	}
 
 	// Set general defaults
 	if len(config.Context) == 0 {
@@ -83,6 +92,38 @@ func LoadAndValidateFromViper() (*BinnacleConfig, error) {
 	}
 
 	return &config, nil
+}
+
+// reparseChartValues re-reads each chart's `values` block directly from the
+// config file with yaml.v3 so case-sensitive Helm keys survive viper's key
+// lowercasing. Charts are matched by document order, which viper and yaml.v3
+// both preserve.
+func reparseChartValues(config *BinnacleConfig) error {
+	if config.ConfigFile == "" {
+		return nil
+	}
+
+	data, err := os.ReadFile(config.ConfigFile)
+	if err != nil {
+		return fmt.Errorf("re-reading config file for chart values: %w", err)
+	}
+
+	var raw struct {
+		Charts []struct {
+			Values map[string]any `yaml:"values"`
+		} `yaml:"charts"`
+	}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("parsing chart values: %w", err)
+	}
+
+	for i := range config.Charts {
+		if i < len(raw.Charts) {
+			config.Charts[i].Values = raw.Charts[i].Values
+		}
+	}
+
+	return nil
 }
 
 func cleanupInterfaceArray(in []interface{}) []interface{} {
