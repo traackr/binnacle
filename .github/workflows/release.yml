@@ -36,7 +36,7 @@ jobs:
         GENERATE_PACKAGES: true
 
     - name: Release
-      uses: softprops/action-gh-release@35d938cf01f60fbe522917c81be1e892074f6ad6
+      uses: softprops/action-gh-release@d1e66170d32c9ec7bbcb7fae044d3d686ce304d3
       with:
         files: |
           pkg/binnacle-*.tar.gz
