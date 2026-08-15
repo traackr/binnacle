@@ -4,8 +4,8 @@
 # and kept in sync with infra-platform's stack).
 [tools]
 go = "1.26.2"
-helm = "3.17.3"
-kustomize = "5.6.0"
+helm = "4.2.4"
+kustomize = "5.8.1"
 
 [tasks.build]
 description = "Cross-compile binnacle (scripts/build.sh)"
