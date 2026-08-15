@@ -11,10 +11,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
 
-    - name: Cache Go Dependencies
-      uses: actions/cache@v2
+    - name: Set up mise (installs go/helm/kustomize from .mise.toml)
+      uses: jdx/mise-action@v2
+
+    - name: Cache Go modules + build cache
+      uses: actions/cache@v4
       with:
         path: |
           ~/go/pkg/mod
@@ -23,16 +26,11 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-go-
 
-    - name: Install Go
-      uses: actions/setup-go@v2
-      with:
-        go-version: 1.18.2
-
     - name: Test
-      run: go test -v ./...
+      run: mise run test
 
     - name: Build
-      run: make build
+      run: mise run build
       env:
         TARGETS: release
         GENERATE_PACKAGES: true
