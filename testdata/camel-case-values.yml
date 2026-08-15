@@ -1,0 +1,20 @@
+---
+# Helm values are case-sensitive; binnacle must pass camelCase keys through
+# unchanged (regression guard: viper lowercases keys).
+charts:
+  - name: traackr-generic
+    namespace: apps
+    release: my-app
+    repo: traackr
+    state: present
+    version: 0.13.1
+    values:
+      nameOverride: my-app
+      serviceAccount:
+        name: my-sa
+      ingress:
+        enabled: true
+repositories:
+  - name: traackr
+    url: https://example.com
+    state: present
