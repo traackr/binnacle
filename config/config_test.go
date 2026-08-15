@@ -39,6 +39,37 @@ func TestBooleanIsNotCoerced(t *testing.T) {
 	}
 }
 
+func TestLoadAndValidateFromViper_PreservesValueKeyCase(t *testing.T) {
+	viper.Reset()
+	viper.SetConfigFile("../testdata/camel-case-values.yml")
+	viper.ReadInConfig()
+
+	c, err := LoadAndValidateFromViper()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	values := c.Charts[0].Values
+
+	// Helm values are case-sensitive: a camelCase top-level key must survive.
+	if got, ok := values["nameOverride"]; !ok || got != "my-app" {
+		keys := make([]string, 0, len(values))
+		for k := range values {
+			keys = append(keys, k)
+		}
+		t.Errorf("want values[nameOverride]=my-app, got value=%v present=%v; keys present=%v", got, ok, keys)
+	}
+
+	// A nested camelCase key must survive too.
+	sa, ok := values["serviceAccount"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("want values[serviceAccount] to be a map[string]interface{}, got %T", values["serviceAccount"])
+	}
+	if got := sa["name"]; got != "my-sa" {
+		t.Errorf("want serviceAccount.name=my-sa, got %v", got)
+	}
+}
+
 func TestLoadAndValidateFromViper_Unmarshallable(t *testing.T) {
 	viper.SetConfigFile("../testdata/unmarshallable.yml")
 	viper.ReadInConfig()
