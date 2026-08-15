@@ -1,0 +1,20 @@
+# binnacle build toolchain — mise (replaces the old asdf .tool-versions).
+# go builds the binary; helm/kustomize are what binnacle shells out to at
+# runtime (not needed for `go test`, but pinned here for local end-to-end runs
+# and kept in sync with infra-platform's stack).
+[tools]
+go = "1.26.2"
+helm = "3.17.3"
+kustomize = "5.6.0"
+
+[tasks.build]
+description = "Cross-compile binnacle (scripts/build.sh)"
+run = "scripts/build.sh"
+
+[tasks.test]
+description = "Run unit tests"
+run = "go test -v ./..."
+
+[tasks.clean]
+description = "Remove build artifacts"
+run = "rm -rf bin pkg"

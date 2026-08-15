@@ -1,34 +1,30 @@
-# Adapted from https://github.com/mvdan/github-actions-golang
+# Tooling (go, helm, kustomize) comes from .mise.toml via mise-action.
 on: [push, pull_request]
 name: Test
 jobs:
   test:
     strategy:
       matrix:
-        go-version: [1.18.2]
-        os: [ubuntu-20.04, macos-12]
+        os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
 
     steps:
-    - name: Install Go
-      uses: actions/setup-go@v2
-      with:
-        go-version: ${{ matrix.go-version }}
-
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
 
-    - name: Cache Go Dependencies
-      uses: actions/cache@v2
+    - name: Set up mise (installs go/helm/kustomize from .mise.toml)
+      uses: jdx/mise-action@v2
+
+    - name: Cache Go modules + build cache
+      uses: actions/cache@v4
       with:
         path: |
           ~/go/pkg/mod
           ~/.cache/go-build
           ~/Library/Caches/go-build
-          %LocalAppData%\go-build
         key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
         restore-keys: |
           ${{ runner.os }}-go-
 
     - name: Test
-      run: go test -v ./...
+      run: mise run test
