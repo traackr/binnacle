@@ -399,6 +399,12 @@ name: Release
 # GitHub filters that to prevent recursive runs -- so a separate tag-triggered
 # release workflow would silently never fire. Gating on release-please's own
 # output avoids needing a GitHub App token to work around that.
+#
+# release-please publishes the GitHub Release the moment it creates the tag --
+# before build-and-upload has run test+build and attached assets. There is
+# therefore a brief window where the release exists with no binaries attached.
+# This is a behaviour change from the previous single-step tag-triggered
+# workflow; it is expected, not a bug.
 on:
   push:
     branches: [main]
@@ -427,10 +433,11 @@ jobs:
       pull-requests: write
     outputs:
       releases_created: ${{ steps.release.outputs.releases_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       - name: Maintain release PR / cut release
         id: release
-        uses: googleapis/release-please-action@v4
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
@@ -458,13 +465,17 @@ jobs:
     permissions:
       contents: write
     steps:
-      # On the push path github.sha is the merge commit of the release PR --
-      # the exact commit release-please tagged -- so its manifest holds the
-      # version being released. On the dispatch path, check out the tag itself.
+      # The tag is authoritative on both paths: release-please's own tag_name
+      # output on push, or the workflow_dispatch input to re-publish an
+      # existing tag. github.sha would also work on the push path today --
+      # release-please tags the merge commit that triggered this run -- but
+      # it would silently hide a tag that renders differently than expected
+      # (e.g. a package-name component prefix), which is exactly the failure
+      # the version step below is built to catch.
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.inputs.tag || github.sha }}
+          ref: ${{ github.event.inputs.tag || needs.release-please.outputs.tag_name }}
           fetch-depth: 0
 
       - name: Set up mise (installs go/helm/kustomize/jq from .mise.toml)
@@ -480,30 +491,45 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
-      - name: Resolve version from manifest
+      # The tag (from the dispatch input or release-please's output) is what
+      # gh release upload targets, and the manifest is a cross-check against
+      # it -- not the other way around. Deriving the upload target from the
+      # manifest alone is what let a tag-component regression fail silently
+      # and publish a release with no assets, so a mismatch here MUST fail
+      # loudly instead.
+      - name: Resolve and verify the release tag
         id: version
         env:
-          INPUT_TAG: ${{ github.event.inputs.tag }}
+          TAG: ${{ github.event.inputs.tag || needs.release-please.outputs.tag_name }}
         run: |
           set -euo pipefail
 
-          version="$(jq -r '.["."] // empty' .release-please-manifest.json)"
+          if [ -z "${TAG:-}" ]; then
+            echo "no tag available: neither the workflow_dispatch input nor" >&2
+            echo "release-please's tag_name output was set" >&2
+            exit 1
+          fi
+
+          MANIFEST=.release-please-manifest.json
+          if [ ! -f "$MANIFEST" ]; then
+            echo "==> ERROR: $MANIFEST not found -- tag '$TAG' predates manifest-based versioning" >&2
+            exit 1
+          fi
+
+          version="$(jq -r '.["."] // empty' "$MANIFEST")" \
+            || { echo "==> ERROR: $MANIFEST is not valid JSON" >&2; exit 1; }
           if [ -z "$version" ]; then
-            echo "no version recorded for path '.' in .release-please-manifest.json" >&2
+            echo "==> ERROR: no version recorded for path '.' in $MANIFEST -- tag '$TAG' predates manifest-based versioning" >&2
             exit 1
           fi
 
-          # On the dispatch path the checked-out tag must agree with the
-          # manifest at that tag. Without this check a typo in the input would
-          # publish assets stamped with a different version than the tag they
-          # are attached to.
-          if [ -n "${INPUT_TAG:-}" ] && [ "$INPUT_TAG" != "$version" ]; then
-            echo "tag '$INPUT_TAG' does not match manifest version '$version'" >&2
+          if [ "$TAG" != "$version" ]; then
+            echo "==> ERROR: tag '$TAG' does not match manifest version '$version'" >&2
             exit 1
           fi
 
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Publishing binnacle $version"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Publishing binnacle $TAG"
 
       - name: Test
         run: mise run test
@@ -519,11 +545,11 @@ jobs:
       - name: Upload assets to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
           ls -1 pkg/binnacle-*.tar.gz pkg/SHA256SUM.txt
-          gh release upload "$VERSION" \
+          gh release upload "$TAG" \
             pkg/binnacle-*.tar.gz \
             pkg/SHA256SUM.txt \
             --clobber
@@ -745,7 +771,7 @@ jobs:
 
           while IFS= read -r subject; do
             [ -z "$subject" ] && continue
-            if printf '%s' "$subject" | grep -qE "$pattern"; then
+            if grep -qE "$pattern" <<< "$subject"; then
               printf 'ok    %s\n' "$subject"
             else
               printf 'FAIL  %s\n' "$subject"
@@ -1047,20 +1073,29 @@ not to hand-edit assets on the published release.
 
 ## Notes for the implementer
 
-**The `releases_created` output name.** release-please-action v4 in manifest mode
-emits `releases_created` (plural) reliably. It also emits per-path outputs like
-`.--tag_name` for the root package, but referencing those in a GitHub Actions
-expression needs bracket syntax and is easy to get subtly wrong. This plan
-deliberately avoids them: the gate uses only `releases_created`, and the version
-comes from the manifest at the checked-out commit. If `releases_created` turns
-out to be empty at runtime, print `${{ toJSON(needs.release-please.outputs) }}`
-in a debug step and use whatever key is actually present — do not guess.
+**The `releases_created` and `tag_name` output names.** release-please-action v4
+in manifest mode emits `releases_created` (plural) reliably, and that is what
+gates whether `build-and-upload` runs at all. For a root package (path `.`),
+the action's `setPathOutput()` emits *unprefixed* outputs, so
+`steps.release.outputs.tag_name` is a plain read — bracket syntax is only
+needed for a non-root path, which this repo does not have. `tag_name` supplies
+the tag that both `Checkout` and `gh release upload` use; the manifest is read
+only as a cross-check against it, and a mismatch between the tag and the
+manifest version fails the job loudly rather than publishing silently under
+the wrong name. If `releases_created` or `tag_name` turn out to be empty or
+absent at runtime, print `${{ toJSON(needs.release-please.outputs) }}` in a
+debug step and use whatever key is actually present — do not guess.
 
-**Why `github.sha` is the right ref on the push path.** release-please creates
-the tag on the merge commit of the release PR. That merge commit is what pushed
-to `main`, so it is `github.sha` for this run. Checking it out gives both the
-code being released and the manifest holding its version, with no need to read
-a tag name from an output.
+**Why the tag is the right ref, not `github.sha`.** release-please creates the
+tag on the merge commit of the release PR, so on the push path `github.sha`
+would resolve to the same commit today. But the tag, not the commit, is the
+object release-please actually created, and it is what the downstream
+`releases/download/<tag>/...` URL resolves against. Driving checkout and
+upload from `needs.release-please.outputs.tag_name` — cross-checked against
+the manifest — means a tag-shape regression (a returning `package-name`
+component, a stray `v` prefix) fails the job loudly instead of silently
+publishing a release with zero assets, which is exactly the failure mode
+`github.sha` would have hidden.
 
 **What is explicitly out of scope.** No Go file changes; the ldflags keep
 targeting `github.com/Traackr/binnacle/cmd.VERSION` until PR 2. The

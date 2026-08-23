@@ -211,7 +211,7 @@ failed outright.
 ### Conventional Commits enforcement
 
 A ~20 line bash step in the PR workflow validating each commit subject against
-`^(feat|fix|chore|docs|refactor|test|ci|build|perf|style|revert)(\(.+\))?!?: .+`,
+`^(feat|fix|chore|docs|refactor|test|ci|build|perf|style|revert)(\([A-Za-z0-9._/-]+\))?!?: .+`,
 run over the PR's commit range
 (`git log --format=%s origin/${{ github.base_ref }}..HEAD`). Per the dependency
 ladder this MUST NOT pull in a Node toolchain (commitlint) for a regex.

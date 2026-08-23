@@ -137,7 +137,6 @@ This example shows the `repo` has been omitted and the name pointing to a URL us
 
 - Initial release
 
-[Unreleased]: https://github.com/traackr/binnacle/compare/v0.8.0...HEAD
 [0.8.0]: https://github.com/traackr/binnacle/tree/0.8.0
 [0.7.1]: https://github.com/traackr/binnacle/tree/0.7.1
 [0.7.0]: https://github.com/traackr/binnacle/tree/0.7.0
