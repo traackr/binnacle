@@ -496,11 +496,19 @@ Run:
 ```bash
 grep -n "releases_created == 'true'" .github/workflows/release.yml
 grep -n "github.event_name == 'workflow_dispatch'" .github/workflows/release.yml
-grep -c "always()" .github/workflows/release.yml   # expect 0
+
+# always() must not appear in a CONDITION. It does appear in the explanatory
+# comment that says not to use it, so a bare `grep -c` would false-positive on
+# the workflow's own documentation. Exclude comment lines.
+grep -n "always()" .github/workflows/release.yml | grep -v ':[[:space:]]*#'
 ```
 
-Expected: the first two match, and `always()` appears zero times. `always()`
-here would run the upload job even when release-please failed.
+Expected: the first two match. The third prints nothing and exits non-zero,
+meaning no *functional* `always()` — only the comment on the `build-and-upload`
+condition, which MUST be kept. `always()` in that condition would run the upload
+job even when release-please failed outright.
+
+Do NOT delete the explanatory comment to make a grep pass.
 
 - [ ] **Step 5: Confirm the asset glob matches what Task 1 builds**
 
