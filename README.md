@@ -310,6 +310,11 @@ make build
 
 This will generate a binary within the ./bin directory of the project.
 
+`make build` runs `scripts/build.sh`, which requires `jq` on `PATH` to read
+the release version from `.release-please-manifest.json`. Prefer
+`mise run build`, which installs `jq` (along with go/helm/kustomize) from
+`.mise.toml` first.
+
 To run the unit tests:
 
 ```script

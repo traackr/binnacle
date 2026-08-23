@@ -19,7 +19,8 @@ if [[ ! -f "$MANIFEST" ]]; then
   echo "==> ERROR: $MANIFEST not found" >&2
   exit 1
 fi
-VERSION="$(jq -r '.["."] // empty' "$MANIFEST")"
+VERSION="$(jq -r '.["."] // empty' "$MANIFEST")" \
+  || { echo "==> ERROR: $MANIFEST is not valid JSON" >&2; exit 1; }
 if [[ -z "$VERSION" ]]; then
   echo "==> ERROR: no version recorded for path '.' in $MANIFEST" >&2
   exit 1
@@ -92,6 +93,7 @@ for target in $targets; do
       ;;
     *)
       echo "--> Invalid target: $target"
+      exit 1
       ;;
   esac
 done

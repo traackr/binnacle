@@ -3,10 +3,6 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 
-## [Unreleased]
-
-- None at this time
-
 ## [0.8.0] - 2022-05-12
 
 - Remove support for Helm 2
