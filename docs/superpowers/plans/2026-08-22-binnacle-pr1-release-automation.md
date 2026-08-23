@@ -811,17 +811,57 @@ cut a release; nothing fires until the whole stack reaches `main`.
 - Consumes: the workflows from Tasks 3 and 4, and the manifest contract from Task 2.
 - Produces: a verification record on the PR.
 
-- [ ] **Step 1: Push the branch and open the stacked PR**
+- [ ] **Step 1: Push the whole stack, bases first**
+
+A PR's base branch must exist on the remote before `gh pr create` will accept
+it. None of the stack is pushed, so pushing only the topmost branch would make
+the next step fail with "base branch not found". Push in dependency order:
 
 ```bash
+git push -u origin docs/modernization-spec
+git push -u origin test/sample-config-fixtures
 git push -u origin feat/release-automation
-gh pr create --repo traackr/binnacle \
-  --base test/sample-config-fixtures \
-  --title "ci: automate releases with release-please, drop lxc targets" \
-  --body "PR 1 of 4. See docs/superpowers/specs/2026-08-22-binnacle-modernization-design.md and docs/superpowers/plans/2026-08-22-binnacle-pr1-release-automation.md. Stacked on test/sample-config-fixtures."
 ```
 
-The base is the fixtures branch, not `main`.
+Confirm all three landed before continuing:
+
+```bash
+for b in docs/modernization-spec test/sample-config-fixtures feat/release-automation; do
+  git ls-remote --exit-code --heads origin "$b" >/dev/null 2>&1 \
+    && echo "ok      $b" || echo "MISSING $b"
+done
+```
+
+Expected: three `ok` lines. Anything `MISSING` means stop and re-push before
+opening any PR.
+
+- [ ] **Step 1b: Open the three stacked PRs**
+
+Each PR's base is the branch below it, so each diff shows only its own work
+rather than everything beneath it.
+
+```bash
+gh pr create --repo traackr/binnacle \
+  --base main --head docs/modernization-spec \
+  --title "docs: add binnacle modernization design spec" \
+  --body "PR 1 of 4 in the modernization stack. Design spec only, no code."
+
+gh pr create --repo traackr/binnacle \
+  --base docs/modernization-spec --head test/sample-config-fixtures \
+  --title "test: add diverse sample config fixtures" \
+  --body "PR 2 of 4. Synthetic binnacle configs covering kustomize, deep camelCase values, all four chart-reference forms, and a strict-decoding rejection case. No behavior change."
+
+gh pr create --repo traackr/binnacle \
+  --base test/sample-config-fixtures --head feat/release-automation \
+  --title "ci: automate releases with release-please, drop lxc targets" \
+  --body "PR 3 of 4. See docs/superpowers/specs/2026-08-22-binnacle-modernization-design.md and docs/superpowers/plans/2026-08-22-binnacle-pr1-release-automation.md."
+```
+
+Note that `commit-lint.yml` only exists on `feat/release-automation`, so only
+the third PR runs it. That is expected: the two lower PRs predate the workflow.
+
+A later merge of the lower PRs will retarget the upper ones automatically — do
+not close and reopen them.
 
 - [ ] **Step 2: Confirm commit-lint runs and passes**
 
