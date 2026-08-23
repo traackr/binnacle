@@ -5,6 +5,11 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Without this, dependabot writes "Bump x from y to z", which fails the
+    # conventional-commit check and gives release-please nothing to act on.
+    commit-message:
+      prefix: "chore"
+      include: "scope"
     groups:
       go-dependencies:
         patterns:
@@ -15,6 +20,9 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
     groups:
       github-actions:
         patterns:

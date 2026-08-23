@@ -1,0 +1,71 @@
+name: Commit Lint
+
+# release-please reads commit subjects to decide the next version, so a
+# non-conventional subject on main is a missed release, not a style nit.
+#
+# pull_request only: on a bare push there is no reliable base to diff against,
+# so there is no commit range to validate.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  conventional-commits:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Validate commit subjects
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+
+          # Fetch the base branch explicitly rather than assuming checkout left
+          # a usable remote-tracking ref behind.
+          git fetch --no-tags origin \
+            "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+
+          pattern='^(feat|fix|chore|docs|refactor|test|ci|build|perf|style|revert)(\([a-z0-9._/-]+\))?!?: .+'
+          failed=0
+
+          # --no-merges: merging main into a branch brings along subjects that
+          # were already validated on their own PR.
+          subjects="$(git log --no-merges --format=%s "origin/${BASE_REF}..HEAD")"
+
+          if [ -z "$subjects" ]; then
+            echo "No non-merge commits to validate."
+            exit 0
+          fi
+
+          while IFS= read -r subject; do
+            [ -z "$subject" ] && continue
+            if printf '%s' "$subject" | grep -qE "$pattern"; then
+              printf 'ok    %s\n' "$subject"
+            else
+              printf 'FAIL  %s\n' "$subject"
+              failed=1
+            fi
+          done <<< "$subjects"
+
+          if [ "$failed" -ne 0 ]; then
+            {
+              printf '\n'
+              printf 'Commit subjects must follow Conventional Commits:\n\n'
+              printf '  <type>[(scope)][!]: <description>\n\n'
+              printf 'Allowed types: feat fix chore docs refactor test ci build perf style revert\n\n'
+              printf 'Examples:\n'
+              printf '  feat: add kustomize post-renderer support\n'
+              printf '  fix(config): preserve case-sensitive Helm value keys\n'
+              printf '  feat!: drop Helm 2 support\n\n'
+              printf 'release-please derives the next version from these, so a\n'
+              printf 'non-conventional subject means a missed release.\n'
+            } >&2
+            exit 1
+          fi
