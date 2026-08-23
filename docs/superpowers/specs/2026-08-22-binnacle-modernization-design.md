@@ -98,19 +98,23 @@ Each of these was considered and rejected for a stated reason.
 | `charmbracelet/log` | Depends on lipgloss **v1**, which would link both v1 and v2 into the binary. Stdlib `log/slog` instead. |
 | `charmbracelet/fang` | Cobra-only starter kit; binnacle is leaving cobra. |
 | Structural re-rendering of helm output | Parsing helm's output into a model couples binnacle to helm's format across versions. Line-oriented decoration is used instead. |
-| Renaming `master` to `main` | A public repo's default-branch rename invalidates existing clones and external refs. Tracked as an open item, not folded in. |
 
 ## Delivery: a four-PR stack
 
 Each PR bases on the previous one. PR 1 touches no Go code and can land alone.
 
 ```
-docs/modernization-spec          this document
-  └─ PR 1  release automation + drop lxc      (no Go changes)
-       └─ PR 2  cobra -> urfave/cli v3 + completions
-            └─ PR 3  drop viper
-                 └─ PR 4  lipgloss + slog
+(prerequisite)  rename default branch master -> main
+docs/modernization-spec              this document
+  └─ test/sample-config-fixtures     synthetic config fixtures
+       └─ PR 1  release automation + drop lxc   (no Go changes)
+            └─ PR 2  cobra -> urfave/cli v3 + completions
+                 └─ PR 3  drop viper
+                      └─ PR 4  lipgloss + slog
 ```
+
+The fixtures land before PR 1 so that every later PR can assert against them.
+They are additive and change no behavior.
 
 ---
 
@@ -130,7 +134,7 @@ workflow, gated on release-please's own output. No GitHub App installation on th
 ```yaml
 on:
   push:
-    branches: [master]
+    branches: [main]
   workflow_dispatch:
     inputs:
       tag: { description: "Tag to (re)publish", required: true }
@@ -406,19 +410,37 @@ Human-facing status lines go through `ui.Logger` (the `OK` / `Error` / `Warn` /
 | urfave/cli parses the Jenkins `--` invocation differently from cobra | Explicit passthrough test in PR 2. Verified invocation forms recorded above. |
 | A helm version bump breaks line decoration | `Decorate` returns unrecognized lines verbatim by construction. |
 | release-please's first PR proposes an unexpected version | `.release-please-manifest.json` is seeded at the current `1.0.1`, so the first release is a normal increment from a known point. |
-| Dropping viper changes config acceptance for a real config in `kubernetes-apps` | `KnownFields(true)` matches `UnmarshalExact`'s strictness. Before merging PR 3, run `binnacle template` against every binnacle file in `infra-platform/kubernetes-apps/` and diff the output against the pre-change binary. |
+| Dropping viper changes config acceptance for a real config in `kubernetes-apps` | `KnownFields(true)` matches `UnmarshalExact`'s strictness. The `testdata/` fixtures cover the shapes those configs use, including kustomize with both inline and file patches, deep camelCase values, and mixed chart states. Fixtures prove the shapes, not the population: a `binnacle template` diff against the real 343 configs remains the only proof for production, and SHOULD be run by someone with helm repo credentials before PR 3 merges. It is a check, not a blocker. |
+
+## Prerequisite
+
+**Default branch rename.** Decided: `master` becomes `main`, and the release
+workflow in PR 1 targets `main`. Recon found the branch unprotected, no open
+PRs, no branch-pinned consumers (every consumer pins a release tag, e.g.
+`BINNACLE_VERSION: 1.0.1`), and no branch reference in binnacle's own workflows
+(`test.yml` is `on: [push, pull_request]`, `release.yml` is tag-triggered). The
+only `master` strings in the repo are unrelated third-party URLs in
+`config/chart.go`, `CHANGELOG.md`, and two fixtures, which MUST be left alone.
+
+The rename MUST land before PR 1, since PR 1's workflow names the branch.
 
 ## Open items
 
 These are tracked, not resolved, and none block the stack.
 
-1. **`master` vs `main`.** The default branch is `master`; the release workflow
-   targets it. A rename is a clean standalone change if wanted, but is not folded
-   into this work.
+1. **`ChartConfig.URL` is dead.** `config/chart.go` declares a `url` field, but
+   `ChartURL()` never reads it — a chart by absolute URL is expressed through
+   `name` instead (see `testdata/chart-url-variants.yml`). Either the field or
+   the documentation is wrong. PR 3 SHOULD resolve this, since it is already
+   rewriting the struct tags, but removing an exported field from a public
+   package is a breaking change and needs a decision first.
 2. **`scripts/build.sh` no-ops.** `-extldflags '-static'` and the mingw
    `CC`/`CXX` assignments are inert under `CGO_ENABLED=0`.
 3. **`windows_amd64` target.** Retained; no evidence either way about consumers.
 4. **`vhs` / `freeze` as mise dev tools.** Scripted terminal recordings for the
-   README would suit a change whose point is output legibility. Zero runtime cost.
-   Deferred as documentation work.
+   README would suit a change whose point is output legibility. Zero runtime
+   cost. Deferred as documentation work.
 5. **`glamour`.** Revisit only if a `binnacle docs` command becomes wanted.
+6. **Stale remote branches.** `chore/release-1.0.0`, `fix/values-key-case`,
+   `feat/release-linux-arm64`, `chore/mise-go1.26-modernize`, and
+   `release-0.8.3` are all merged and unpruned. Unrelated to this work.
