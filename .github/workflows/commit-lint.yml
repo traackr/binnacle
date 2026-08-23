@@ -32,7 +32,7 @@ jobs:
           git fetch --no-tags origin \
             "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
 
-          pattern='^(feat|fix|chore|docs|refactor|test|ci|build|perf|style|revert)(\([a-z0-9._/-]+\))?!?: .+'
+          pattern='^(feat|fix|chore|docs|refactor|test|ci|build|perf|style|revert)(\([A-Za-z0-9._/-]+\))?!?: .+'
           failed=0
 
           # --no-merges: merging main into a branch brings along subjects that
@@ -46,7 +46,7 @@ jobs:
 
           while IFS= read -r subject; do
             [ -z "$subject" ] && continue
-            if printf '%s' "$subject" | grep -qE "$pattern"; then
+            if grep -qE "$pattern" <<< "$subject"; then
               printf 'ok    %s\n' "$subject"
             else
               printf 'FAIL  %s\n' "$subject"
