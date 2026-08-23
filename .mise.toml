@@ -15,8 +15,14 @@ description = "Cross-compile binnacle (scripts/build.sh)"
 run = "scripts/build.sh"
 
 [tasks.test]
-description = "Run unit tests"
-run = "go test -v ./..."
+description = "Run unit tests in randomised order"
+# -shuffle=on randomises test order within each package. Without it Go runs
+# test files in a fixed order, which structurally hides order-dependent
+# failures: this repo had one where a bare viper.Reset() in one test file left
+# the next file's loadConfig() parsing an empty loglevel, and it stayed
+# invisible because root_test.go happens to sort last. Go prints the seed on
+# failure, so a red run reproduces with -shuffle=<seed>.
+run = "go test -v -shuffle=on ./..."
 
 [tasks.coverage]
 description = "Run unit tests with a coverage profile (coverage.out)"
