@@ -69,7 +69,7 @@ func TestGetCurrentRepositories(t *testing.T) {
 		"example\thttps://charts.example.com\n" +
 		"thirdparty\thttps://charts-thirdparty.example.com\n"
 
-	withHelm(t, helmOK(listOutput))
+	calls := withHelm(t, helmOK(listOutput))
 
 	repos, err := getCurrentRepositories()
 	if err != nil {
@@ -83,6 +83,13 @@ func TestGetCurrentRepositories(t *testing.T) {
 	}
 	if repos[1].Name != "thirdparty" {
 		t.Errorf("repos[1].Name = %q, want thirdparty", repos[1].Name)
+	}
+
+	if len(*calls) != 1 {
+		t.Fatalf("made %d helm calls, want 1", len(*calls))
+	}
+	if got := strings.Join((*calls)[0], " "); got != "repo list" {
+		t.Errorf("helm called with %q, want %q", got, "repo list")
 	}
 }
 
@@ -213,7 +220,13 @@ func TestReleaseExists(t *testing.T) {
 			name:   "release genuinely absent",
 			result: Result{Stderr: "Error: release: not found"},
 			err:    errors.New("exit status 1"),
-			want:   true, // documents current behaviour; see note below
+			// ReleaseExists initialises exists=true and only flips it to false
+			// when stderr is something OTHER than "Error: release: not found",
+			// so a genuinely absent release still reports true. The condition
+			// is inverted relative to the function's name. syncCharts relies on
+			// the current behaviour to decide what to uninstall, so this test
+			// pins it rather than asserting what the name implies.
+			want: true,
 		},
 	}
 
