@@ -374,9 +374,9 @@ on:
         required: true
         type: string
 
+# Least privilege: a read-only floor, and each job elevates only what it needs.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}
@@ -386,6 +386,10 @@ jobs:
   release-please:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    # Manages the release PR and creates the tag + GitHub Release.
+    permissions:
+      contents: write
+      pull-requests: write
     outputs:
       releases_created: ${{ steps.release.outputs.releases_created }}
     steps:
@@ -398,13 +402,26 @@ jobs:
 
   build-and-upload:
     needs: release-please
-    # A skipped `needs` job would skip this one too, so the dispatch path is
-    # re-admitted explicitly. always() MUST NOT be used here: it would also run
-    # this job when release-please fails outright.
+    # GitHub ANDs an implicit success() onto any job `if:` that does not contain
+    # a status-check function -- always(), success(), failure(), cancelled().
+    # A job with `needs:` is therefore skipped whenever its dependency is
+    # skipped, no matter what its own condition says. On workflow_dispatch
+    # release-please is SKIPPED (its own `if:` is false), so without a
+    # status-check function this job would never run and the workflow would
+    # report success while doing nothing.
+    #
+    # !cancelled() supplies that function without a bare always()'s downside of
+    # running through a cancelled workflow. The explicit result check keeps what
+    # always() alone would discard: no publishing when release-please failed.
     if: |
-      needs.release-please.outputs.releases_created == 'true' ||
-      github.event_name == 'workflow_dispatch'
+      !cancelled() &&
+      needs.release-please.result != 'failure' &&
+      (needs.release-please.outputs.releases_created == 'true' ||
+       github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
+    # Only needs to attach assets to a release that already exists.
+    permissions:
+      contents: write
     steps:
       # On the push path github.sha is the merge commit of the release PR --
       # the exact commit release-please tagged -- so its manifest holds the
@@ -497,18 +514,28 @@ Run:
 grep -n "releases_created == 'true'" .github/workflows/release.yml
 grep -n "github.event_name == 'workflow_dispatch'" .github/workflows/release.yml
 
-# always() must not appear in a CONDITION. It does appear in the explanatory
-# comment that says not to use it, so a bare `grep -c` would false-positive on
-# the workflow's own documentation. Exclude comment lines.
+# A status-check function MUST be present in the build-and-upload condition.
+# Without one, GitHub's implicit success() skips the job whenever
+# release-please is skipped -- which is exactly the workflow_dispatch path.
+grep -n '!cancelled()' .github/workflows/release.yml
+
+# The explicit failure guard MUST be present too, so a release-please failure
+# still blocks publishing.
+grep -n "needs.release-please.result != 'failure'" .github/workflows/release.yml
+
+# A BARE always() must not appear in a CONDITION. It does appear in the
+# explanatory comment, so a plain `grep -c` false-positives on the workflow's
+# own documentation. Exclude comment lines.
 grep -n "always()" .github/workflows/release.yml | grep -v ':[[:space:]]*#'
 ```
 
-Expected: the first two match. The third prints nothing and exits non-zero,
-meaning no *functional* `always()` — only the comment on the `build-and-upload`
-condition, which MUST be kept. `always()` in that condition would run the upload
-job even when release-please failed outright.
+Expected: the first four each match exactly once. The last prints nothing and
+exits non-zero — no *functional* `always()`, only the comment, which MUST be
+kept.
 
-Do NOT delete the explanatory comment to make a grep pass.
+Do NOT delete the explanatory comment to make a grep pass, and do NOT replace
+`!cancelled()` with a bare `always()`: that would run the upload job even when
+release-please failed outright.
 
 - [ ] **Step 5: Confirm the asset glob matches what Task 1 builds**
 
