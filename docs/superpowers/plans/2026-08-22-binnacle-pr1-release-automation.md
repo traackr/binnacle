@@ -511,27 +511,35 @@ boolean `True`, which is why the expression above checks for both.
 Run:
 
 ```bash
-grep -n "releases_created == 'true'" .github/workflows/release.yml
-grep -n "github.event_name == 'workflow_dispatch'" .github/workflows/release.yml
+# Every guard below appears BOTH in the condition and in the comment that
+# documents it, so a raw `grep -c` counts the documentation too. Filter comment
+# lines and count only functional occurrences. (Two earlier versions of this
+# check asserted raw counts and both false-positived on the workflow's own
+# comments -- first on always(), then on !cancelled().)
+functional() {
+  grep -n "$1" .github/workflows/release.yml | grep -v ':[[:space:]]*#'
+}
 
-# A status-check function MUST be present in the build-and-upload condition.
-# Without one, GitHub's implicit success() skips the job whenever
-# release-please is skipped -- which is exactly the workflow_dispatch path.
-grep -n '!cancelled()' .github/workflows/release.yml
+functional "releases_created == 'true'"
+functional "github.event_name == 'workflow_dispatch'"
+functional '!cancelled()'
+functional "needs.release-please.result != 'failure'"
 
-# The explicit failure guard MUST be present too, so a release-please failure
-# still blocks publishing.
-grep -n "needs.release-please.result != 'failure'" .github/workflows/release.yml
-
-# A BARE always() must not appear in a CONDITION. It does appear in the
-# explanatory comment, so a plain `grep -c` false-positives on the workflow's
-# own documentation. Exclude comment lines.
-grep -n "always()" .github/workflows/release.yml | grep -v ':[[:space:]]*#'
+# A bare always() MUST NOT appear in a condition. It appears only in comments.
+if functional "always()" >/dev/null; then
+  echo "FAIL: functional always() found"
+else
+  echo "ok: no functional always()"
+fi
 ```
 
-Expected: the first four each match exactly once. The last prints nothing and
-exits non-zero — no *functional* `always()`, only the comment, which MUST be
-kept.
+Expected: each of the first four prints exactly one line. The last prints
+`ok: no functional always()`.
+
+The `!cancelled()` condition MUST stay a `|` block scalar. `!` is YAML's tag
+indicator, so the bare inline form `if: !cancelled() && ...` is a hard parse
+error (`ScannerError: while scanning an anchor`). Do not collapse the condition
+onto one line.
 
 Do NOT delete the explanatory comment to make a grep pass, and do NOT replace
 `!cancelled()` with a bare `always()`: that would run the upload job even when
