@@ -5,9 +5,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
@@ -144,5 +146,102 @@ func TestCompletionWorksWithoutConfigFile(t *testing.T) {
 				t.Errorf("completion %s script is polluted with a diagnostic line", shell)
 			}
 		})
+	}
+}
+
+// TestCommandPreRunEFailsWithoutConfig exercises each command's PreRunE
+// directly (rather than through Execute) so the "you forgot -c" path is
+// pinned per command: every one of these wires loadConfig() as its first
+// step and returns its error verbatim.
+func TestCommandPreRunEFailsWithoutConfig(t *testing.T) {
+	prev := cfgFile
+	cfgFile = ""
+	t.Cleanup(func() { cfgFile = prev })
+
+	tests := []struct {
+		name string
+		cmd  *cobra.Command
+	}{
+		{"sync", syncCmd},
+		{"diff", diffCmd},
+		{"template", templateCmd},
+		{"status", statusCmd},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.cmd.PreRunE(tc.cmd, nil)
+			if err == nil {
+				t.Fatalf("%s PreRunE with no -c returned nil, want an error", tc.name)
+			}
+			if !strings.Contains(err.Error(), "-c/--config") {
+				t.Errorf("%s PreRunE error = %q, want it to mention -c/--config", tc.name, err.Error())
+			}
+		})
+	}
+}
+
+func TestExecHelmLookPathFailure(t *testing.T) {
+	// An empty temp dir on PATH guarantees exec.LookPath("helm") fails,
+	// without depending on whatever is actually installed on the machine
+	// running the test.
+	t.Setenv("PATH", t.TempDir())
+
+	_, err := execHelm("version")
+	if err == nil {
+		t.Fatal("execHelm with no helm on PATH returned nil error")
+	}
+	if !strings.Contains(err.Error(), "searching for helm on PATH") {
+		t.Errorf("execHelm error = %q, want it to mention searching for helm on PATH", err.Error())
+	}
+}
+
+// writeFakeHelm writes an executable shell script named "helm" into dir and
+// puts dir on PATH, so execHelm's exec.LookPath call resolves to it.
+func writeFakeHelm(t *testing.T, dir, script string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fake helm is a POSIX shell script")
+	}
+
+	path := filepath.Join(dir, "helm")
+	if err := os.WriteFile(path, []byte(script), 0755); err != nil {
+		t.Fatalf("writing fake helm: %v", err)
+	}
+	t.Setenv("PATH", dir)
+}
+
+func TestExecHelmCapturesStdoutAndStderr(t *testing.T) {
+	// execHelm only trims spaces, not newlines, so the fake helm must not
+	// emit a trailing one.
+	writeFakeHelm(t, t.TempDir(), "#!/bin/sh\nprintf 'stdout line'\nprintf 'stderr line' >&2\nexit 0\n")
+
+	res, err := execHelm("version")
+	if err != nil {
+		t.Fatalf("execHelm: %v", err)
+	}
+	if res.Stdout != "stdout line" {
+		t.Errorf("Stdout = %q, want %q", res.Stdout, "stdout line")
+	}
+	if res.Stderr != "stderr line" {
+		t.Errorf("Stderr = %q, want %q", res.Stderr, "stderr line")
+	}
+	if res.ExitCode != 0 {
+		t.Errorf("ExitCode = %d, want 0", res.ExitCode)
+	}
+}
+
+func TestExecHelmCapturesNonZeroExitCode(t *testing.T) {
+	writeFakeHelm(t, t.TempDir(), "#!/bin/sh\nprintf boom >&2\nexit 3\n")
+
+	res, err := execHelm("upgrade")
+	if err == nil {
+		t.Fatal("execHelm with a failing helm returned nil error")
+	}
+	if res.ExitCode != 3 {
+		t.Errorf("ExitCode = %d, want 3", res.ExitCode)
+	}
+	if res.Stderr != "boom" {
+		t.Errorf("Stderr = %q, want %q", res.Stderr, "boom")
 	}
 }
