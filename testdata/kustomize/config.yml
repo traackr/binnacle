@@ -1,0 +1,33 @@
+---
+# Kustomize post-renderer using file references. The companion files live
+# beside this config, because SetupKustomize resolves `resources` and
+# `patches[].path` relative to the config file's own directory and copies
+# them into its temporary working directory.
+#
+# Exercises: Kustomization.Resources, Patch.Path, and a target selector
+# carrying only kind + name.
+charts:
+  - name: api
+    namespace: platform
+    release: platform-api
+    repo: example
+    state: present
+    version: 0.9.2
+    values:
+      nameOverride: platform-api
+      serviceAccount:
+        create: true
+        name: platform-api
+    kustomize:
+      resources:
+        - extra-configmap.yml
+      patches:
+        - path: api-resources.yml
+          target:
+            kind: Deployment
+            name: platform-api
+
+repositories:
+  - name: example
+    url: https://charts.example.com
+    state: present

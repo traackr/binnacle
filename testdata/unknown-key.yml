@@ -1,0 +1,17 @@
+---
+# Rejection fixture: `namesapce` is a typo for `namespace`, and `retries` is
+# not part of the schema at all. A strict decoder MUST fail on both rather
+# than silently dropping them, since a dropped `namespace` deploys a release
+# into the wrong place.
+charts:
+  - name: web
+    namesapce: storefront
+    release: storefront-web
+    repo: example
+    state: present
+    retries: 3
+
+repositories:
+  - name: example
+    url: https://charts.example.com
+    state: present

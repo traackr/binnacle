@@ -1,0 +1,10 @@
+---
+# An additional manifest merged in by kustomize alongside the helm-templated
+# output. Referenced by config.yml's kustomize.resources.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-api-extra
+data:
+  FEATURE_FLAG_SEARCH: "enabled"
+  UPSTREAM_TIMEOUT_SECONDS: "30"

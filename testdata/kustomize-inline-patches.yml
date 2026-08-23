@@ -1,0 +1,44 @@
+---
+# Kustomize post-renderer using inline `patch` strings rather than file
+# references, so this fixture needs no companion files on disk.
+#
+# Exercises: Patch.Patch, Patch.Target with a full group/version/kind
+# selector, Patch.Options, and a target matched by labelSelector.
+charts:
+  - name: web
+    namespace: storefront
+    release: storefront-web
+    repo: example
+    state: present
+    version: 2.4.0
+    values:
+      replicaCount: 2
+      nameOverride: storefront-web
+      image:
+        repository: example/web
+        tag: "1.19.3"
+    kustomize:
+      patches:
+        - patch: |
+            - op: replace
+              path: /spec/replicas
+              value: 4
+          target:
+            group: apps
+            version: v1
+            kind: Deployment
+            name: storefront-web
+        - patch: |
+            - op: add
+              path: /metadata/annotations/deploy.example.com~1owner
+              value: storefront-team
+          target:
+            kind: Deployment
+            labelSelector: "app.kubernetes.io/name=web"
+          options:
+            allowNameChange: true
+
+repositories:
+  - name: example
+    url: https://charts.example.com
+    state: present

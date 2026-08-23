@@ -1,0 +1,60 @@
+---
+# Deeply nested values with camelCase keys at every level. The existing
+# camel-case-values.yml guard is only two levels deep, which would still pass
+# if a loader preserved case at the top and lost it further down.
+#
+# Every camelCase key below MUST survive parsing byte-identical: Helm treats
+# `nodeSelector` and `nodeselector` as different values, so a lowercasing
+# loader renders a chart wrong rather than failing loudly.
+charts:
+  - name: worker
+    namespace: data
+    release: data-worker
+    repo: example
+    state: present
+    version: 3.1.0
+    values:
+      nameOverride: data-worker
+      fullnameOverride: data-worker
+      replicaCount: 3
+      imagePullSecrets:
+        - name: registryCredentials
+      serviceAccount:
+        create: true
+        automountServiceAccountToken: false
+        annotations:
+          iam.example.com/roleArn: arn:example:iam::000000000000:role/PlaceholderRole
+      podSecurityContext:
+        runAsNonRoot: true
+        fsGroup: 2000
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+      livenessProbe:
+        httpGet:
+          path: /healthz
+          port: httpMetrics
+        initialDelaySeconds: 30
+        periodSeconds: 10
+      nodeSelector:
+        kubernetes.io/arch: arm64
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+      extraEnvVars:
+        - name: QUEUE_NAME
+          value: default
+        - name: LOG_FORMAT
+          value: json
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1Gi
+        limits:
+          memory: 2Gi
+
+repositories:
+  - name: example
+    url: https://charts.example.com
+    state: present
