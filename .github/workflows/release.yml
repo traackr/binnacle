@@ -1,46 +1,122 @@
 name: Release
 
-# Trigger only when a tag is pushed
+# release-please owns versioning. On every push to main it maintains a release
+# PR; when that PR merges it creates the tag and the GitHub Release, and
+# build-and-upload attaches the binaries to the release it just created.
+#
+# Both halves live in one workflow deliberately. A tag pushed by release-please
+# with the default GITHUB_TOKEN does NOT trigger `on: push: tags:` workflows --
+# GitHub filters that to prevent recursive runs -- so a separate tag-triggered
+# release workflow would silently never fire. Gating on release-please's own
+# output avoids needing a GitHub App token to work around that.
 on:
   push:
-    tags:
-      - '*'
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to re-publish assets for (e.g. 1.0.2)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
 
 jobs:
-  release:
+  release-please:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      releases_created: ${{ steps.release.outputs.releases_created }}
+    steps:
+      - name: Maintain release PR / cut release
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  build-and-upload:
+    needs: release-please
+    # A skipped `needs` job would skip this one too, so the dispatch path is
+    # re-admitted explicitly. always() MUST NOT be used here: it would also run
+    # this job when release-please fails outright.
+    if: |
+      needs.release-please.outputs.releases_created == 'true' ||
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v7
+      # On the push path github.sha is the merge commit of the release PR --
+      # the exact commit release-please tagged -- so its manifest holds the
+      # version being released. On the dispatch path, check out the tag itself.
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.tag || github.sha }}
+          fetch-depth: 0
 
-    - name: Set up mise (installs go/helm/kustomize from .mise.toml)
-      uses: jdx/mise-action@v4
+      - name: Set up mise (installs go/helm/kustomize/jq from .mise.toml)
+        uses: jdx/mise-action@v4
 
-    - name: Cache Go modules + build cache
-      uses: actions/cache@v6
-      with:
-        path: |
-          ~/go/pkg/mod
-          ~/.cache/go-build
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
+      - name: Cache Go modules + build cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
 
-    - name: Test
-      run: mise run test
+      - name: Resolve version from manifest
+        id: version
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          set -euo pipefail
 
-    - name: Build
-      run: mise run build
-      env:
-        TARGETS: release
-        GENERATE_PACKAGES: true
+          version="$(jq -r '.["."] // empty' .release-please-manifest.json)"
+          if [ -z "$version" ]; then
+            echo "no version recorded for path '.' in .release-please-manifest.json" >&2
+            exit 1
+          fi
 
-    - name: Release
-      uses: softprops/action-gh-release@e5ee6bc58a36b838b92fc1217f2e4b414b5abcc8
-      with:
-        files: |
-          pkg/binnacle-*.tar.gz
-          pkg/SHA256SUM.txt
-        fail_on_unmatched_files: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # On the dispatch path the checked-out tag must agree with the
+          # manifest at that tag. Without this check a typo in the input would
+          # publish assets stamped with a different version than the tag they
+          # are attached to.
+          if [ -n "${INPUT_TAG:-}" ] && [ "$INPUT_TAG" != "$version" ]; then
+            echo "tag '$INPUT_TAG' does not match manifest version '$version'" >&2
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Publishing binnacle $version"
+
+      - name: Test
+        run: mise run test
+
+      - name: Build release artifacts
+        run: mise run build
+        env:
+          TARGETS: release
+          GENERATE_PACKAGES: true
+
+      # gh is preinstalled on GitHub runners, so this needs no third-party
+      # action in the release path. --clobber makes a re-publish idempotent.
+      - name: Upload assets to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          ls -1 pkg/binnacle-*.tar.gz pkg/SHA256SUM.txt
+          gh release upload "$VERSION" \
+            pkg/binnacle-*.tar.gz \
+            pkg/SHA256SUM.txt \
+            --clobber
