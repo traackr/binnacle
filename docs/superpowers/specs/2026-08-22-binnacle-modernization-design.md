@@ -114,38 +114,47 @@ Each PR bases on the previous one. The first three touch no Go code.
 
 ```
 (prerequisite)  rename default branch master -> main   [done]
-docs/modernization-spec              this document
-  └─ test/sample-config-fixtures     synthetic config fixtures
-       └─ PR 1  release automation + drop lxc   (no Go changes)
-            └─ PR 2  coverage reporting + patch gate
-                 └─ PR 3  cobra -> urfave/cli v3 + completions
-                      └─ PR 4  coverage to 90%
-                           └─ PR 5  drop viper
-                                └─ PR 6  lipgloss + slog
+docs/modernization-spec              design doc                    [merged]
+  └─ test/sample-config-fixtures     synthetic config fixtures     [merged]
+       └─ release automation + drop lxc                            [merged, 1.1.0]
+            └─ coverage reporting + patch gate                     [merged]
+                 └─ tests to ~85% + working completions            [this PR]
+                      └─ drop viper
+                           └─ lipgloss + slog
 ```
+
+### The urfave/cli migration was dropped
+
+Two premises justified it, and both proved false:
+
+- **Completions did not need it.** Cobra already ships
+  `binnacle completion bash|zsh|fish|powershell`. What was missing was not a
+  framework but a fix: a global `cobra.OnInitialize` hook ran config loading
+  for every command, including `completion`, and called `log.Fatal` when no
+  `-c` was given, so it exited 1. (A required-flag-inheritance mechanism,
+  spf13/cobra#2212, is often blamed for this class of bug; it was tested and
+  disproved here at this repo's pinned cobra v1.10.2 — re-adding only
+  `RootCmd.MarkFlagRequired("config")` leaves `completion zsh` working, while
+  re-adding only the `OnInitialize` hook reproduces the failure immediately.)
+  Scoping config loading to `PreRunE` on the commands that read config fixed
+  it without touching the framework.
+- **The test seam did not need it.** `RunHelmCommand` became a package-level
+  variable in place, one line, with no call-site changes. That unlocked every
+  test in `cmd/`.
+
+Rewriting the CLI framework remains possible later on its own merits — richer
+help output, `Sources: cli.EnvVars(...)` for flags — but it is no longer on the
+path to anything else, so it is not scheduled.
 
 The fixtures land before PR 1 so that every later PR can assert against them.
 They are additive and change no behavior.
 
 ### Why coverage is split across PR 2 and PR 4
 
-Coverage starts at 11.5% overall — `config` at 62.5%, `cmd` at **2.8%**. The
-reason `cmd` is near zero is structural, not neglect: `RunHelmCommand` calls
-`exec.LookPath` and `exec.Command` directly, with no injection seam, so 23 of
-the package's tracked functions cannot be reached by a unit test at all.
-
-A single 90% gate therefore cannot be met until PR 3 extracts `internal/helm`
-with a substitutable `runHelm`. Splitting the work avoids writing test
-scaffolding twice:
-
-- **PR 2** lands reporting plus `target-patch: 90`, so every changed line is
-  held to the bar immediately, while `target-project: auto` with
-  `threshold-project: 0` only forbids regression from the current total.
-- **PR 4** backfills tests through the new seam and flips `target-project` to a
-  hard `90`.
-
-The gate is calibrated to what the code can currently support, and ratchets.
-A gate set to an unreachable number is one that gets disabled.
+This split no longer exists. The tests landed against cobra rather than after
+a migration: the patch gate (`target-patch: 90`) landed first in PR 2, the
+test suite followed in this PR against the existing framework, and the
+project gate rose to a hard 80 once the suite existed to support it.
 
 ---
 
