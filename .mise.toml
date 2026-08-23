@@ -6,6 +6,7 @@
 go = "1.26.2"
 helm = "4.2.4"
 kustomize = "5.8.1"
+jq = "1.7.1"
 
 [tasks.build]
 description = "Cross-compile binnacle (scripts/build.sh)"

@@ -11,8 +11,19 @@ PACKAGE="$(basename "$DIR")"
 # Move into our base repository path
 cd "$DIR"
 
-# Get the version of the app
-VERSION="$(cat VERSION)"
+# The version comes from .release-please-manifest.json, which release-please
+# rewrites when a release PR merges. It is the single source of truth; there is
+# deliberately no VERSION file that could drift from it.
+MANIFEST="$DIR/.release-please-manifest.json"
+if [[ ! -f "$MANIFEST" ]]; then
+  echo "==> ERROR: $MANIFEST not found" >&2
+  exit 1
+fi
+VERSION="$(jq -r '.["."] // empty' "$MANIFEST")"
+if [[ -z "$VERSION" ]]; then
+  echo "==> ERROR: no version recorded for path '.' in $MANIFEST" >&2
+  exit 1
+fi
 
 # Clean up old binaries and packages
 echo "==> Cleaning up build environment..."
