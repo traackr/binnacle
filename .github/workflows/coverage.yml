@@ -9,9 +9,11 @@ on:
     branches: [main]
 
 # Per the action's documented requirements. On pull requests from forks
-# GITHUB_TOKEN is restricted regardless of what is declared here; the action
-# skips the PR comment and commit status gracefully and still emits the job
-# summary. binnacle is public, so that path is reachable.
+# GITHUB_TOKEN is restricted regardless of what is declared here. Only the
+# annotations degrade: the PR comment and commit status are skipped with a
+# warning, while the thresholds are computed before those calls and the job
+# still fails on a breach. The job summary is written unconditionally.
+# binnacle is public, so that path is reachable.
 permissions:
   contents: read
   actions: read
@@ -72,4 +74,10 @@ jobs:
           target-patch: 90
           target-project: auto
           threshold-project: 0
+          # Two distinct switches, both required. fail-on-error fails the job
+          # when a threshold is missed. fail-ci-if-error fails it when coverage
+          # cannot be found or parsed at all -- without it, processCoverage()
+          # returns null, the whole threshold block is skipped, and the job
+          # reports success having enforced nothing.
           fail-on-error: true
+          fail-ci-if-error: true
