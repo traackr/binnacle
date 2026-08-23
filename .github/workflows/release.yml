@@ -19,9 +19,9 @@ on:
         required: true
         type: string
 
+# Least privilege: a read-only floor, and each job elevates only what it needs.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}
@@ -31,6 +31,10 @@ jobs:
   release-please:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    # Manages the release PR and creates the tag + GitHub Release.
+    permissions:
+      contents: write
+      pull-requests: write
     outputs:
       releases_created: ${{ steps.release.outputs.releases_created }}
     steps:
@@ -43,13 +47,26 @@ jobs:
 
   build-and-upload:
     needs: release-please
-    # A skipped `needs` job would skip this one too, so the dispatch path is
-    # re-admitted explicitly. always() MUST NOT be used here: it would also run
-    # this job when release-please fails outright.
+    # GitHub ANDs an implicit success() onto any job `if:` that does not contain
+    # a status-check function -- always(), success(), failure(), cancelled().
+    # A job with `needs:` is therefore skipped whenever its dependency is
+    # skipped, no matter what its own condition says. On workflow_dispatch
+    # release-please is SKIPPED (its own `if:` is false), so without a
+    # status-check function this job would never run and the workflow would
+    # report success while doing nothing.
+    #
+    # !cancelled() supplies that function without a bare always()'s downside of
+    # running through a cancelled workflow. The explicit result check keeps what
+    # always() alone would discard: no publishing when release-please failed.
     if: |
-      needs.release-please.outputs.releases_created == 'true' ||
-      github.event_name == 'workflow_dispatch'
+      !cancelled() &&
+      needs.release-please.result != 'failure' &&
+      (needs.release-please.outputs.releases_created == 'true' ||
+       github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
+    # Only needs to attach assets to a release that already exists.
+    permissions:
+      contents: write
     steps:
       # On the push path github.sha is the merge commit of the release PR --
       # the exact commit release-please tagged -- so its manifest holds the
