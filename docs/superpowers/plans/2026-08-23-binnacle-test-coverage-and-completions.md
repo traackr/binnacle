@@ -303,10 +303,13 @@ In `cmd/root.go`'s `init()`, delete these two lines:
 	RootCmd.MarkFlagRequired("config")
 ```
 
-The `MarkFlagRequired` removal is the actual fix for the completion bug: `completion` is a child of
-root, so it inherits root's persistent flags, and a required one it cannot supply makes it fail. This
-is spf13/cobra#2212. Requiredness moves to `loadConfig`, which only the commands that need config
-call.
+The `cobra.OnInitialize(initConfig)` removal is the actual fix for the completion bug: `OnInitialize`
+hooks run before every command's own logic, so `completion` was going through `initConfig` and hitting
+its `log.Fatal` when no `-c` was given. (A required-flag-inheritance mechanism, spf13/cobra#2212, is
+often blamed for this class of bug; it was tested and disproved here at this repo's pinned cobra
+v1.10.2 — re-adding only `RootCmd.MarkFlagRequired("config")` leaves `completion zsh` working, while
+re-adding only the `OnInitialize` hook reproduces the failure immediately. The `OnInitialize` hook was
+the sole cause.) Requiredness moves to `loadConfig`, which only the commands that need config call.
 
 Leave the `RootCmd.PersistentFlags()` declarations for `config` and `loglevel` exactly as they are,
 including the `viper.BindPFlag` call.
@@ -1315,10 +1318,15 @@ Two premises justified it, and both proved false:
 
 - **Completions did not need it.** Cobra already ships
   `binnacle completion bash|zsh|fish|powershell`. What was missing was not a
-  framework but a fix: a required persistent flag on the root command is
-  inherited by the built-in `completion` command, which cannot supply it, so it
-  exited 1 (spf13/cobra#2212). Scoping config loading to the commands that read
-  config fixed it without touching the framework.
+  framework but a fix: a global `cobra.OnInitialize` hook ran config loading
+  for every command, including `completion`, and called `log.Fatal` when no
+  `-c` was given, so it exited 1. (A required-flag-inheritance mechanism,
+  spf13/cobra#2212, is often blamed for this class of bug; it was tested and
+  disproved here at this repo's pinned cobra v1.10.2 — re-adding only
+  `RootCmd.MarkFlagRequired("config")` leaves `completion zsh` working, while
+  re-adding only the `OnInitialize` hook reproduces the failure immediately.)
+  Scoping config loading to `PreRunE` on the commands that read config fixed
+  it without touching the framework.
 - **The test seam did not need it.** `RunHelmCommand` became a package-level
   variable in place, one line, with no call-site changes. That unlocked every
   test in `cmd/`.
