@@ -47,7 +47,7 @@ targets="$LOCAL_TARGET"
 
 # If we are building for release change targets based off of environment
 if [[ "$TARGETS" == "release" ]]; then
-  targets="darwin_amd64 darwin_arm64 linux_amd64 linux_amd64-lxc linux_arm64 linux_arm64-lxc windows_amd64"
+  targets="darwin_amd64 darwin_arm64 linux_amd64 linux_arm64 windows_amd64"
 elif [[ "$TARGETS" != "" ]]; then
   targets="$TARGETS"
 fi
@@ -69,20 +69,10 @@ for target in $targets; do
       CGO_ENABLED=0 GOOS="linux" GOARCH="amd64" \
         go build -ldflags "$STATIC $EXTLDFLAGS" -o "pkg/linux_amd64/$PACKAGE"
       ;;
-    "linux_amd64-lxc")
-      echo "==> Building linux amd64 with lxc..."
-      CGO_ENABLED=0 GOOS="linux" GOARCH="amd64" \
-        go build -ldflags "$STATIC $EXTLDFLAGS" -o "pkg/linux_amd64-lxc/$PACKAGE" -tags "lxc"
-      ;;
     "linux_arm64")
       echo "==> Building linux arm64..."
       CGO_ENABLED=0 GOOS="linux" GOARCH="arm64" \
         go build -ldflags "$STATIC $EXTLDFLAGS" -o "pkg/linux_arm64/$PACKAGE"
-      ;;
-    "linux_arm64-lxc")
-      echo "==> Building linux arm64 with lxc..."
-      CGO_ENABLED=0 GOOS="linux" GOARCH="arm64" \
-        go build -ldflags "$STATIC $EXTLDFLAGS" -o "pkg/linux_arm64-lxc/$PACKAGE" -tags "lxc"
       ;;
     "windows_amd64")
       echo "==> Building windows amd64..."
