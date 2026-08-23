@@ -1,46 +1,165 @@
 name: Release
 
-# Trigger only when a tag is pushed
+# release-please owns versioning. On every push to main it maintains a release
+# PR; when that PR merges it creates the tag and the GitHub Release, and
+# build-and-upload attaches the binaries to the release it just created.
+#
+# Both halves live in one workflow deliberately. A tag pushed by release-please
+# with the default GITHUB_TOKEN does NOT trigger `on: push: tags:` workflows --
+# GitHub filters that to prevent recursive runs -- so a separate tag-triggered
+# release workflow would silently never fire. Gating on release-please's own
+# output avoids needing a GitHub App token to work around that.
+#
+# release-please publishes the GitHub Release the moment it creates the tag --
+# before build-and-upload has run test+build and attached assets. There is
+# therefore a brief window where the release exists with no binaries attached.
+# This is a behaviour change from the previous single-step tag-triggered
+# workflow; it is expected, not a bug.
 on:
   push:
-    tags:
-      - '*'
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to re-publish assets for"
+        required: true
+        type: string
+
+# Least privilege: a read-only floor, and each job elevates only what it needs.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
 
 jobs:
-  release:
+  release-please:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    # Manages the release PR and creates the tag + GitHub Release.
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      releases_created: ${{ steps.release.outputs.releases_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v7
+      - name: Maintain release PR / cut release
+        id: release
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
 
-    - name: Set up mise (installs go/helm/kustomize from .mise.toml)
-      uses: jdx/mise-action@v4
+  build-and-upload:
+    needs: release-please
+    # GitHub ANDs an implicit success() onto any job `if:` that does not contain
+    # a status-check function -- always(), success(), failure(), cancelled().
+    # A job with `needs:` is therefore skipped whenever its dependency is
+    # skipped, no matter what its own condition says. On workflow_dispatch
+    # release-please is SKIPPED (its own `if:` is false), so without a
+    # status-check function this job would never run and the workflow would
+    # report success while doing nothing.
+    #
+    # !cancelled() supplies that function without a bare always()'s downside of
+    # running through a cancelled workflow. The explicit result check keeps what
+    # always() alone would discard: no publishing when release-please failed.
+    if: |
+      !cancelled() &&
+      needs.release-please.result != 'failure' &&
+      (needs.release-please.outputs.releases_created == 'true' ||
+       github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    # Only needs to attach assets to a release that already exists.
+    permissions:
+      contents: write
+    steps:
+      # The tag is authoritative on both paths: release-please's own tag_name
+      # output on push, or the workflow_dispatch input to re-publish an
+      # existing tag. github.sha would also work on the push path today --
+      # release-please tags the merge commit that triggered this run -- but
+      # it would silently hide a tag that renders differently than expected
+      # (e.g. a package-name component prefix), which is exactly the failure
+      # the version step below is built to catch.
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.tag || needs.release-please.outputs.tag_name }}
+          fetch-depth: 0
 
-    - name: Cache Go modules + build cache
-      uses: actions/cache@v6
-      with:
-        path: |
-          ~/go/pkg/mod
-          ~/.cache/go-build
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
+      - name: Set up mise (installs go/helm/kustomize/jq from .mise.toml)
+        uses: jdx/mise-action@v4
 
-    - name: Test
-      run: mise run test
+      - name: Cache Go modules + build cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
 
-    - name: Build
-      run: mise run build
-      env:
-        TARGETS: release
-        GENERATE_PACKAGES: true
+      # The tag (from the dispatch input or release-please's output) is what
+      # gh release upload targets, and the manifest is a cross-check against
+      # it -- not the other way around. Deriving the upload target from the
+      # manifest alone is what let a tag-component regression fail silently
+      # and publish a release with no assets, so a mismatch here MUST fail
+      # loudly instead.
+      - name: Resolve and verify the release tag
+        id: version
+        env:
+          TAG: ${{ github.event.inputs.tag || needs.release-please.outputs.tag_name }}
+        run: |
+          set -euo pipefail
 
-    - name: Release
-      uses: softprops/action-gh-release@e5ee6bc58a36b838b92fc1217f2e4b414b5abcc8
-      with:
-        files: |
-          pkg/binnacle-*.tar.gz
-          pkg/SHA256SUM.txt
-        fail_on_unmatched_files: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          if [ -z "${TAG:-}" ]; then
+            echo "no tag available: neither the workflow_dispatch input nor" >&2
+            echo "release-please's tag_name output was set" >&2
+            exit 1
+          fi
+
+          MANIFEST=.release-please-manifest.json
+          if [ ! -f "$MANIFEST" ]; then
+            echo "==> ERROR: $MANIFEST not found -- tag '$TAG' predates manifest-based versioning" >&2
+            exit 1
+          fi
+
+          version="$(jq -r '.["."] // empty' "$MANIFEST")" \
+            || { echo "==> ERROR: $MANIFEST is not valid JSON" >&2; exit 1; }
+          if [ -z "$version" ]; then
+            echo "==> ERROR: no version recorded for path '.' in $MANIFEST -- tag '$TAG' predates manifest-based versioning" >&2
+            exit 1
+          fi
+
+          if [ "$TAG" != "$version" ]; then
+            echo "==> ERROR: tag '$TAG' does not match manifest version '$version'" >&2
+            exit 1
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Publishing binnacle $TAG"
+
+      - name: Test
+        run: mise run test
+
+      - name: Build release artifacts
+        run: mise run build
+        env:
+          TARGETS: release
+          GENERATE_PACKAGES: true
+
+      # gh is preinstalled on GitHub runners, so this needs no third-party
+      # action in the release path. --clobber makes a re-publish idempotent.
+      - name: Upload assets to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          ls -1 pkg/binnacle-*.tar.gz pkg/SHA256SUM.txt
+          gh release upload "$TAG" \
+            pkg/binnacle-*.tar.gz \
+            pkg/SHA256SUM.txt \
+            --clobber

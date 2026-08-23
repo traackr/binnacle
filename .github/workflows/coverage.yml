@@ -1,0 +1,127 @@
+name: Coverage
+
+# Runs on pull requests to report and gate, and on pushes to main so the base
+# branch has a stored result for `target-project: auto` to compare against.
+# Without the main runs there is no baseline and the project check is inert.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Per the action's documented requirements. On pull requests from forks
+# GITHUB_TOKEN is restricted regardless of what is declared here. Only the
+# annotations degrade: the PR comment and commit status are skipped with a
+# warning, while the thresholds are computed before those calls and the job
+# still fails on a breach. The job summary is written unconditionally.
+# binnacle is public, so that path is reachable.
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  statuses: write
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up mise (installs go from .mise.toml)
+        uses: jdx/mise-action@v4
+
+      - name: Cache Go modules + build cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Test with coverage
+        run: mise run coverage
+
+      # Emitted before the gate so the numbers are visible even when the gate
+      # fails, and independently of the action being reachable.
+      #
+      # The headline is computed the way the action computes its project
+      # percentage -- covered statements over every statement in the profile --
+      # so the summary, the codecov/project check and the PR comment agree.
+      # `go tool cover -func` reports a slightly higher total (11.5% vs 11.18%
+      # at time of writing) because it counts only statements it can attribute
+      # to a function, so it is shown as detail rather than as the headline.
+      - name: Coverage summary
+        run: |
+          set -euo pipefail
+          {
+            awk 'NR>1 { n = $(NF-1); t += n; if ($NF > 0) c += n; else m += n }
+                 END { printf "### Coverage: %.2f%%\n\n%d of %d statements covered, %d uncovered.\n",
+                              (t ? 100*c/t : 0), c, t, m }' coverage.out
+            echo
+            echo "Per-function detail:"
+            echo '```'
+            go tool cover -func=coverage.out
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Go writes PACKAGE IMPORT PATHS into the profile
+      # (github.com/Traackr/binnacle/cmd/sync.go), but the action matches them
+      # against the pull request's changed files, which are repo-relative
+      # (cmd/sync.go). Nothing matches, so patch coverage silently "defaults to
+      # 100% because no changed files matched coverage data" and the 90% patch
+      # gate enforces nothing. The action has no path-prefix input, so strip the
+      # module prefix here.
+      #
+      # Written to a separate file on purpose: `go tool cover` resolves paths
+      # through `go list` and fails outright on the rewritten form, so the
+      # summary above must read the canonical profile.
+      - name: Normalize coverage paths to repo-relative
+        run: |
+          set -euo pipefail
+          mod="$(go list -m)"
+
+          before="$(grep -c "^${mod}/" coverage.out || true)"
+          if [ "$before" -eq 0 ]; then
+            echo "::error::no module-prefixed paths in coverage.out; the Go coverage format may have changed" >&2
+            exit 1
+          fi
+
+          sed "s|^${mod}/||" coverage.out > coverage-relative.out
+
+          after="$(grep -c "^${mod}/" coverage-relative.out || true)"
+          if [ "$after" -ne 0 ]; then
+            echo "::error::${after} paths still module-prefixed after rewrite" >&2
+            exit 1
+          fi
+
+          echo "rewrote ${before} coverage paths to repo-relative"
+
+      # SHA-pinned deliberately: this action is pre-1.0 and holds
+      # pull-requests: write + statuses: write. Widely-used first-party actions
+      # above are on tags, which dependabot maintains.
+      - name: Report coverage and enforce thresholds
+        uses: getsentry/codecov-action@eb2b4a6c4be3ecb42867043570579fa3b6879f6e # 0.3.8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: ./coverage-relative.out
+          coverage-format: go
+          # No JUnit output is produced, so test reporting has nothing to read.
+          enable-tests: false
+          post-pr-comment: true
+          # Changed lines are held to 90% from day one. The project total is
+          # only required not to regress, because it starts at ~11.5%: most of
+          # cmd/ shells out to helm through exec.Command with no injection
+          # seam, so it is unreachable by unit tests until that seam exists.
+          # Flip target-project to 90 once the tests land.
+          target-patch: 90
+          target-project: auto
+          threshold-project: 0
+          # Two distinct switches, both required. fail-on-error fails the job
+          # when a threshold is missed. fail-ci-if-error fails it when coverage
+          # cannot be found or parsed at all -- without it, processCoverage()
+          # returns null, the whole threshold block is skipped, and the job
+          # reports success having enforced nothing.
+          fail-on-error: true
+          fail-ci-if-error: true

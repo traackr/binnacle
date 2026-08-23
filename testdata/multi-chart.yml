@@ -1,0 +1,59 @@
+---
+# Several charts across namespaces with mixed states, plus a repository being
+# removed. Exercises the ordering-sensitive paths: syncRepositories removing a
+# repo before adding others, and syncCharts skipping an absent release that
+# does not exist.
+charts:
+  - name: ingress-nginx
+    namespace: ingress
+    release: ingress-nginx
+    repo: example-thirdparty
+    state: present
+    version: 4.11.3
+    values:
+      controller:
+        replicaCount: 2
+        service:
+          externalTrafficPolicy: Local
+
+  - name: redis
+    namespace: cache
+    release: cache-redis
+    repo: example-thirdparty
+    state: present
+    version: 20.1.0
+    values:
+      architecture: standalone
+      auth:
+        enabled: false
+
+  - name: web
+    namespace: storefront
+    release: storefront-web
+    repo: example
+    state: present
+    version: 2.4.0
+    values:
+      nameOverride: storefront-web
+
+  # Decommissioned: binnacle uninstalls this release, and skips silently when
+  # the release is already gone.
+  - name: legacy-batch
+    namespace: data
+    release: data-legacy-batch
+    repo: example
+    state: absent
+
+repositories:
+  - name: example
+    url: https://charts.example.com
+    state: present
+
+  - name: example-thirdparty
+    url: https://charts-thirdparty.example.com
+    state: present
+
+  # A repository that must be removed from the local helm config.
+  - name: retired
+    url: https://charts-retired.example.invalid
+    state: absent

@@ -1,0 +1,36 @@
+---
+# The four chart-reference forms ChartURL() must handle. Charts 2-4 carry no
+# `repo`, so ChartURL returns the name verbatim rather than "repo/name".
+#
+# See ChartConfig.ChartURL in config/chart.go.
+charts:
+  # 1. By chart reference: <repo>/<name>
+  - name: web
+    namespace: storefront
+    release: storefront-web
+    repo: example
+    state: present
+    version: 2.4.0
+
+  # 2. By path to a packaged chart
+  - name: ./charts/worker-3.1.0.tgz
+    namespace: data
+    release: data-worker
+    state: present
+
+  # 3. By path to an unpacked chart directory
+  - name: ./charts/api
+    namespace: platform
+    release: platform-api
+    state: present
+
+  # 4. By absolute URL
+  - name: https://charts.example.com/packages/cache-20.1.0.tgz
+    namespace: cache
+    release: cache-redis
+    state: present
+
+repositories:
+  - name: example
+    url: https://charts.example.com
+    state: present
