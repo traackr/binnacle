@@ -199,7 +199,7 @@ failed outright.
 
 | File | Change |
 | --- | --- |
-| `release-please-config.json` | New. `"include-v-in-tag": false`, single root package, `"release-type": "go"`. |
+| `release-please-config.json` | New. `"include-v-in-tag": false` and `"include-component-in-tag": false`, single root package, `"release-type": "go"`, `"package-name": "binnacle"`. `package-name` becomes the tag's component when `include-component-in-tag` is left at its default of `true`, so the component MUST be explicitly disabled to keep the tag bare (`1.1.0`, not `binnacle-1.1.0`). |
 | `.release-please-manifest.json` | New, seeded `{".": "1.0.1"}`. Becomes the sole source of version truth. |
 | `VERSION` | Deleted. |
 | `scripts/build.sh` | Reads the version from the manifest via `jq`, mirroring `employee-platform`'s `.mise/tasks/build`. Targets reduce to `darwin_amd64 darwin_arm64 linux_amd64 linux_arm64 windows_amd64`. |
@@ -444,7 +444,7 @@ Human-facing status lines go through `ui.Logger` (the `OK` / `Error` / `Warn` /
 | A styling change corrupts `binnacle template` output and a bad manifest reaches a cluster | Stream discipline is structural, not conditional: `template` stdout never passes through the styling layer at all. Byte-identity test. |
 | urfave/cli parses the Jenkins `--` invocation differently from cobra | Explicit passthrough test in PR 2. Verified invocation forms recorded above. |
 | A helm version bump breaks line decoration | `Decorate` returns unrecognized lines verbatim by construction. |
-| release-please's first PR proposes an unexpected version | `.release-please-manifest.json` is seeded at the current `1.0.1`, so the first release is a normal increment from a known point. |
+| release-please's first PR proposes an unexpected version | `.release-please-manifest.json` is seeded at the current `1.0.1`, so the first release is a normal increment from a known point. Seeding alone is insufficient if the tag carries a `package-name` component: the existing bare `1.0.1` tag then fails to match, and release-please bootstraps a fresh history instead of incrementing. `include-component-in-tag: false` is what keeps seeding effective. |
 | Dropping viper changes config acceptance for a real config in `kubernetes-apps` | `KnownFields(true)` matches `UnmarshalExact`'s strictness. The `testdata/` fixtures cover the shapes those configs use, including kustomize with both inline and file patches, deep camelCase values, and mixed chart states. Fixtures prove the shapes, not the population: a `binnacle template` diff against the real 343 configs remains the only proof for production, and SHOULD be run by someone with helm repo credentials before PR 3 merges. It is a check, not a blocker. |
 
 ## Prerequisite

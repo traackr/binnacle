@@ -189,6 +189,7 @@ Create `release-please-config.json`:
 {
     "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
     "include-v-in-tag": false,
+    "include-component-in-tag": false,
     "packages": {
         ".": {
             "release-type": "go",
@@ -202,6 +203,40 @@ Create `release-please-config.json`:
 `"include-v-in-tag": false` is load-bearing: it produces the bare `1.0.2` tag
 that `infra-platform`'s Dockerfile URL requires. The default would be `v1.0.2`
 and would break the image build.
+
+`"include-component-in-tag": false` is equally load-bearing and easy to miss:
+`package-name` becomes the tag's *component*, and `include-component-in-tag`
+defaults to `true`. Keeping `package-name` (explicit beats implicit, and it
+survives a future default change) without disabling the component renders
+`binnacle-1.0.2` instead of `1.0.2` -- see Step 1b below for how to prove this
+before it ships.
+
+- [ ] **Step 1b: Verify the rendered tag, not just the config keys**
+
+Config keys are not the same as what release-please actually tags, and
+neither this plan's steps nor the spec's checks inspect the rendered string
+anywhere else. Execute the real library against the shipped config:
+
+```bash
+node -e "
+const {TagName} = require('release-please/build/src/util/tag-name.js');
+const {Version} = require('release-please/build/src/version.js');
+const cfg = require('./release-please-config.json');
+const p = cfg.packages['.'];
+const icit = p['include-component-in-tag'] ?? cfg['include-component-in-tag'] ?? true;
+const iv = p['include-v-in-tag'] ?? cfg['include-v-in-tag'] ?? true;
+const comp = icit ? (p.component || p['package-name']) : undefined;
+console.log('renders:', new TagName(Version.parse('1.1.0'), comp, undefined, iv).toString());
+"
+```
+
+If `release-please` is not resolvable as a plain `require`, run the same
+script through `npx --yes -p release-please node -e "..."` instead, which
+resolves it from a temporary install.
+
+Expected: `renders: 1.1.0`. If it prints `binnacle-1.1.0`, the component is
+still on -- `include-component-in-tag` must be explicitly `false`; setting
+`package-name` alone is not enough.
 
 - [ ] **Step 2: Seed the manifest at the currently released version**
 
@@ -370,7 +405,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to re-publish assets for (e.g. 1.0.2)"
+        description: "Existing tag to re-publish assets for"
         required: true
         type: string
 
@@ -696,7 +731,7 @@ jobs:
           git fetch --no-tags origin \
             "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
 
-          pattern='^(feat|fix|chore|docs|refactor|test|ci|build|perf|style|revert)(\([a-z0-9._/-]+\))?!?: .+'
+          pattern='^(feat|fix|chore|docs|refactor|test|ci|build|perf|style|revert)(\([A-Za-z0-9._/-]+\))?!?: .+'
           failed=0
 
           # --no-merges: merging main into a branch brings along subjects that
@@ -762,7 +797,7 @@ The pattern is the whole value of this task, so test it directly rather than
 trusting it. Run:
 
 ```bash
-pattern='^(feat|fix|chore|docs|refactor|test|ci|build|perf|style|revert)(\([a-z0-9._/-]+\))?!?: .+'
+pattern='^(feat|fix|chore|docs|refactor|test|ci|build|perf|style|revert)(\([A-Za-z0-9._/-]+\))?!?: .+'
 
 echo "--- MUST PASS ---"
 for s in \
@@ -796,7 +831,7 @@ no description MUST fail, which is what the trailing `.+` enforces.
 Run:
 
 ```bash
-pattern='^(feat|fix|chore|docs|refactor|test|ci|build|perf|style|revert)(\([a-z0-9._/-]+\))?!?: .+'
+pattern='^(feat|fix|chore|docs|refactor|test|ci|build|perf|style|revert)(\([A-Za-z0-9._/-]+\))?!?: .+'
 git log --no-merges --format=%s origin/main..HEAD | while IFS= read -r s; do
   printf '%s' "$s" | grep -qE "$pattern" && echo "ok   $s" || echo "FAIL $s"
 done

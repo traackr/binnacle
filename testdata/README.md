@@ -1,14 +1,23 @@
 # Test fixtures
 
-Sample binnacle configurations covering the config surface. Every fixture is
-synthetic: chart names, releases, namespaces, and hostnames are invented, and
-URLs use the reserved `example.com` / `example.invalid` domains. This is a
-public repository, so fixtures MUST NOT be copied from a real deployment
-configuration, and MUST NOT name real services, clusters, namespaces, registry
-paths, or IAM roles.
+Sample binnacle configurations covering the config surface. New fixtures
+SHOULD be synthetic: chart names, releases, namespaces, and hostnames
+invented, and URLs using the reserved `example.com` / `example.invalid`
+domains. This is a public repository, so new fixtures MUST NOT be copied from
+a real deployment configuration, and MUST NOT name real services, clusters,
+namespaces, registry paths, or IAM roles.
+
+Two pre-existing fixtures predate this convention and are grandfathered in:
+`camel-case-values.yml` uses `repo: traackr`, and `without-repo.yml` embeds a
+real `github.com/pantsel/konga` URL and the `kube-system` namespace. Do not
+edit either file to "fix" this -- tests assert against their exact contents.
 
 New fixtures SHOULD carry a header comment saying which code path they exercise
 and why, so a later reader can tell an intentional edge case from an accident.
+
+`chart-url-variants.yml`, `deep-values.yml`, `kustomize-inline-patches.yml`,
+`multi-chart.yml`, `unknown-key.yml`, and `kustomize/config.yml` are groundwork
+for a later PR: none of them is loaded by any test yet.
 
 ## Positive fixtures
 
@@ -46,7 +55,7 @@ directory rather than living flat alongside the others.
 
 | File | Role |
 | --- | --- |
-| `config.yml` | The binnacle config. Referenced by tests. |
+| `config.yml` | The binnacle config. Groundwork for a later PR; not yet loaded by any test. |
 | `extra-configmap.yml` | A manifest merged in via `kustomize.resources`. |
 | `api-resources.yml` | A strategic-merge patch referenced by `kustomize.patches[].path`. |
 
