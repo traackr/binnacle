@@ -32,8 +32,12 @@ any of them breaks a downstream consumer, not just a test.
 
 `scripts/build.sh` passes `-tags "lxc"` for two targets, but no Go file in the
 repo carries an `lxc` build tag, so `binnacle-linux_amd64-lxc.tar.gz` is
-byte-identical to `binnacle-linux_amd64.tar.gz`. Nothing in `infra-platform` or
-`application-platform` references the `-lxc` assets.
+*functionally* identical to `binnacle-linux_amd64.tar.gz`. Nothing in
+`infra-platform` or `application-platform` references the `-lxc` assets.
+
+They are **not** byte-identical, and cannot be: Go 1.18+ stamps build settings
+into `runtime/debug.BuildInfo`, so the `-lxc` binary carries an extra
+`build -tags=lxc` line. Compare symbol tables, not hashes.
 
 **Files:**
 - Modify: `scripts/build.sh:50` (release target list), `scripts/build.sh:72-86` (the two `-lxc` case arms)
@@ -42,18 +46,34 @@ byte-identical to `binnacle-linux_amd64.tar.gz`. Nothing in `infra-platform` or
 - Consumes: nothing from earlier tasks.
 - Produces: a release target list of exactly `darwin_amd64 darwin_arm64 linux_amd64 linux_arm64 windows_amd64`. Task 3's workflow depends on `mise run build` with `TARGETS=release` producing exactly those five `pkg/binnacle-*.tar.gz` files plus `pkg/SHA256SUM.txt`.
 
-- [ ] **Step 1: Prove the `-lxc` binaries are identical before removing them**
+- [ ] **Step 1: Prove the `-lxc` binary contains no different code**
 
-This is the evidence for the commit message. Run:
+This is the evidence for the commit message. Do NOT use sha256: Go embeds the
+`-tags` value in the binary's build metadata, so the hashes always differ even
+when no code does. Compare the symbol tables and the build metadata instead.
 
 ```bash
 cd /Users/tyrantkhan/traackr/platform-northstar/binnacle
 TARGETS="linux_amd64 linux_amd64-lxc" mise run build
-shasum -a 256 pkg/linux_amd64/binnacle pkg/linux_amd64-lxc/binnacle
+
+# a. Symbol tables: the real test. Same symbols == same code.
+go tool nm pkg/linux_amd64/binnacle     | awk '{print $2, $3}' | sort > /tmp/nm-plain.txt
+go tool nm pkg/linux_amd64-lxc/binnacle | awk '{print $2, $3}' | sort > /tmp/nm-lxc.txt
+diff /tmp/nm-plain.txt /tmp/nm-lxc.txt && echo "SYMBOLS IDENTICAL ($(wc -l < /tmp/nm-plain.txt) symbols)"
+
+# b. Build metadata: the only expected difference is the tags line.
+go version -m pkg/linux_amd64/binnacle     > /tmp/bi-plain.txt
+go version -m pkg/linux_amd64-lxc/binnacle > /tmp/bi-lxc.txt
+diff /tmp/bi-plain.txt /tmp/bi-lxc.txt
 ```
 
-Expected: the two hashes are identical. If they differ, STOP — the `lxc` tag is
-doing something and this task is wrong.
+Expected: (a) prints `SYMBOLS IDENTICAL` with a symbol count around 8497 and no
+diff output. (b) shows exactly two differing lines — the leading filename in the
+header, and one added `build -tags=lxc` line.
+
+STOP and report BLOCKED if the symbol tables differ, or if (b) shows any
+difference beyond the filename and the `-tags=lxc` line. Either would mean the
+`lxc` tag actually changes the build and this task's premise is wrong.
 
 - [ ] **Step 2: Confirm no Go file carries the `lxc` build tag**
 
@@ -129,8 +149,11 @@ git commit -m "$(cat <<'MSG'
 build: drop dead lxc release targets
 
 build.sh passed -tags "lxc" for two targets, but no Go file in the repo
-carries an lxc build tag, so the -lxc tarballs were byte-identical to the
-plain linux ones (verified by sha256 before removal). Nothing in
+carries an lxc build tag, so the -lxc binaries expose exactly the same
+symbols as the plain linux ones -- verified before removal by comparing
+`go tool nm` output, which matched on all 8497 symbols. They were never
+byte-identical: Go stamps `-tags=lxc` into the build metadata, which
+`go version -m` reports as the sole difference. Nothing in
 infra-platform or application-platform downloads the -lxc assets.
 
 Release now publishes five tarballs instead of seven.
