@@ -151,23 +151,49 @@ on:
 jobs:
   release-please:
     if: github.event_name == 'push'
-    # outputs: release_created, tag_name
+    # outputs: releases_created (plural -- see below), tag_name
 
   build-and-upload:
     needs: release-please
-    # `needs` on a skipped job forces this one to skip too unless the
-    # condition explicitly re-admits the dispatch path.
+    # A job with `needs:` gets an implicit success() ANDed onto its `if:` unless
+    # the expression contains a status-check function. Without one this job can
+    # never run on workflow_dispatch, where release-please is *skipped* rather
+    # than successful. !cancelled() supplies that function.
     if: |
-      needs.release-please.outputs.release_created == 'true' ||
-      github.event_name == 'workflow_dispatch'
-    # ref: inputs.tag on dispatch, else needs.release-please.outputs.tag_name
+      !cancelled() &&
+      needs.release-please.result != 'failure' &&
+      (needs.release-please.outputs.releases_created == 'true' ||
+       github.event_name == 'workflow_dispatch')
+    # ref: inputs.tag on dispatch, else the pushed SHA (github.sha)
     # checkout @ ref -> mise -> test -> build -> upload assets
 ```
 
 The `workflow_dispatch` input is retained as an escape hatch to re-publish assets
-for an existing tag without deleting and recreating it. Note that
-`always()`-style conditions MUST NOT be used to admit that path, as they would
-also let the job run when `release-please` fails outright.
+for an existing tag without deleting and recreating it.
+
+**Two traps here, both verified rather than assumed.**
+
+*The output is plural.* release-please-action v4's `setPathOutput()` emits
+unprefixed outputs when the package path is `"."` (binnacle's case), so
+`releases_created`, `release_created`, and `tag_name` are all plain reads. But
+`releases_created` is set unconditionally, while `release_created` is set **only
+when a release exists** — gating on the singular form compares against an empty
+value on every no-release push. Use the plural.
+
+*An `||` clause is not enough to admit the dispatch path.* Per GitHub's
+expression reference, "a default status check of `success()` is applied unless
+you include one of these functions" — `always()`, `success()`, `failure()`,
+`cancelled()`. A job with `needs:` is therefore skipped whenever its dependency
+is skipped, regardless of what its `if:` says. On `workflow_dispatch`
+`release-please` is skipped, so without a status-check function
+`build-and-upload` skips too and the workflow reports success while doing
+nothing.
+
+`!cancelled()` is the right function rather than a bare `always()`: it lifts the
+implicit gate without also running the job through a cancelled workflow. The
+explicit `needs.release-please.result != 'failure'` preserves what a bare
+`always()` would have discarded — refusing to publish when release-please
+failed outright.
 
 ### Files
 
@@ -406,7 +432,7 @@ Human-facing status lines go through `ui.Logger` (the `OK` / `Error` / `Warn` /
 
 | PR | Verification |
 | --- | --- |
-| 1 | Existing `go test ./...` on both OS matrix legs. Release workflow exercised by `workflow_dispatch` against an existing tag before the first automated release. Asset name and tag shape asserted by eye against the `build-binnacle` Dockerfile's expectations. |
+| 1 | Existing `go test ./...` on both OS matrix legs. Pre-merge: commit-lint passes on the PR and is proven to fail on a deliberately non-conventional subject; `Release` confirmed not to trigger on pull requests. The `workflow_dispatch` path CANNOT be rehearsed against tag `1.0.1` — that tree predates `.release-please-manifest.json`, so version resolution fails on a missing file. Tag shape, asset list, and the exact `build-binnacle` download URL are verified on the first real release instead. |
 | 2 | Existing tests MUST pass unmoved where possible. Add a test asserting `--` passthrough reaches the helm arg list intact, since that is the CI contract most easily broken. Golden-file test on `completion bash|zsh|fish` output being non-empty and free of `%!`. |
 | 3 | `testdata/camel-case-values.yml` and the `d37f928` guard test pass unchanged. New tests for unknown-key rejection and the `validateConfig` rules. |
 | 4 | Table-driven `Decorate` tests over captured helm output fixtures, asserting unrecognized lines pass through byte-identical. A test asserting `template` stdout is byte-identical with and without `NO_COLOR`, and with a forced color profile. |
