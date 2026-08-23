@@ -54,6 +54,38 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # Go writes PACKAGE IMPORT PATHS into the profile
+      # (github.com/Traackr/binnacle/cmd/sync.go), but the action matches them
+      # against the pull request's changed files, which are repo-relative
+      # (cmd/sync.go). Nothing matches, so patch coverage silently "defaults to
+      # 100% because no changed files matched coverage data" and the 90% patch
+      # gate enforces nothing. The action has no path-prefix input, so strip the
+      # module prefix here.
+      #
+      # Written to a separate file on purpose: `go tool cover` resolves paths
+      # through `go list` and fails outright on the rewritten form, so the
+      # summary above must read the canonical profile.
+      - name: Normalize coverage paths to repo-relative
+        run: |
+          set -euo pipefail
+          mod="$(go list -m)"
+
+          before="$(grep -c "^${mod}/" coverage.out || true)"
+          if [ "$before" -eq 0 ]; then
+            echo "::error::no module-prefixed paths in coverage.out; the Go coverage format may have changed" >&2
+            exit 1
+          fi
+
+          sed "s|^${mod}/||" coverage.out > coverage-relative.out
+
+          after="$(grep -c "^${mod}/" coverage-relative.out || true)"
+          if [ "$after" -ne 0 ]; then
+            echo "::error::${after} paths still module-prefixed after rewrite" >&2
+            exit 1
+          fi
+
+          echo "rewrote ${before} coverage paths to repo-relative"
+
       # SHA-pinned deliberately: this action is pre-1.0 and holds
       # pull-requests: write + statuses: write. Widely-used first-party actions
       # above are on tags, which dependabot maintains.
@@ -61,7 +93,7 @@ jobs:
         uses: getsentry/codecov-action@eb2b4a6c4be3ecb42867043570579fa3b6879f6e # 0.3.8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          files: ./coverage.out
+          files: ./coverage-relative.out
           coverage-format: go
           # No JUnit output is produced, so test reporting has nothing to read.
           enable-tests: false

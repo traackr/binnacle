@@ -26,6 +26,7 @@ _testmain.go
 bin/*
 # written by `mise run coverage` and by CI
 coverage.out
+coverage-relative.out
 docs/coverage/*
 docs/unit/*
 pkg/*
