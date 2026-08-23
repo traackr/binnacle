@@ -110,14 +110,13 @@ jobs:
           # No JUnit output is produced, so test reporting has nothing to read.
           enable-tests: false
           post-pr-comment: true
-          # Changed lines are held to 90% from day one. The project total is
-          # only required not to regress, because it starts at ~11.5%: most of
-          # cmd/ shells out to helm through exec.Command with no injection
-          # seam, so it is unreachable by unit tests until that seam exists.
-          # Flip target-project to 90 once the tests land.
           target-patch: 90
-          target-project: auto
-          threshold-project: 0
+          # Raised from `auto` (no-regression) now that the suite exists. 80 is
+          # deliberately below the achieved figure: the remainder is main.go's
+          # single statement and the real exec.Command call inside execHelm,
+          # neither of which a unit test reaches, so a gate at the achieved
+          # number would fail on ordinary churn.
+          target-project: 80
           # Two distinct switches, both required. fail-on-error fails the job
           # when a threshold is missed. fail-ci-if-error fails it when coverage
           # cannot be found or parsed at all -- without it, processCoverage()

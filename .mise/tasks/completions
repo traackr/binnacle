@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# mise description="Install binnacle shell completions (prints the one line you must add yourself)"
+
+set -euo pipefail
+
+# Deliberately not part of a setup task: completion needs a line in the user's
+# own shell rc, and editing ~/.zshrc on someone's behalf is a bigger imposition
+# than it is worth. This does the mechanical half and tells you the rest.
+
+SHELL_NAME="${1:-$(basename "${SHELL:-}")}"
+BIN="${BINNACLE_BIN:-./bin/binnacle}"
+
+if [ ! -x "$BIN" ]; then
+  echo "No binnacle binary at $BIN. Run 'mise run build' first," >&2
+  echo "or set BINNACLE_BIN to an installed one." >&2
+  exit 1
+fi
+
+case "$SHELL_NAME" in
+  zsh)
+    dir="${HOME}/.zsh/completions"
+    mkdir -p "$dir"
+    "$BIN" completion zsh > "${dir}/_binnacle"
+    echo "==> Wrote ${dir}/_binnacle"
+    # compinit reads fpath when it runs, so the line has to precede it. We
+    # cannot append safely: order matters and the rc is the user's file.
+    if grep -qF '.zsh/completions' "${HOME}/.zshrc" 2>/dev/null; then
+      echo "==> ~/.zshrc already extends fpath"
+    else
+      echo
+      echo "Add this to ~/.zshrc ABOVE the 'compinit' line:"
+      echo
+      echo "    fpath=(~/.zsh/completions \$fpath)"
+      echo
+    fi
+    echo "Then open a new shell. If nothing completes, the compinit cache is"
+    echo "stale — 'rm -f ~/.zcompdump*' and open another."
+    ;;
+  bash)
+    dir="${HOME}/.bash_completion.d"
+    mkdir -p "$dir"
+    "$BIN" completion bash > "${dir}/binnacle"
+    echo "==> Wrote ${dir}/binnacle"
+    if grep -qF '.bash_completion.d/binnacle' "${HOME}/.bashrc" 2>/dev/null; then
+      echo "==> ~/.bashrc already sources it"
+    else
+      echo
+      echo "Add this to ~/.bashrc:"
+      echo
+      echo "    source ${dir}/binnacle"
+      echo
+    fi
+    ;;
+  fish)
+    # fish autoloads this directory, so unlike zsh and bash there is no rc line.
+    dir="${HOME}/.config/fish/completions"
+    mkdir -p "$dir"
+    "$BIN" completion fish > "${dir}/binnacle.fish"
+    echo "==> Wrote ${dir}/binnacle.fish"
+    echo "==> fish autoloads this directory; open a new shell."
+    ;;
+  *)
+    echo "Unsupported shell: ${SHELL_NAME:-<unknown>}" >&2
+    echo "Supported: zsh, bash, fish. Pass one explicitly: mise run completions zsh" >&2
+    exit 1
+    ;;
+esac

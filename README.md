@@ -8,6 +8,21 @@
 
 A binary for various operating systems is available through [Github Releases][github-releases].  Download the appropriate archive, and extract into a directory within your PATH.
 
+## Shell completions
+
+```bash
+# zsh, bash or fish — writes the script and prints the one rc line to add
+mise run completions zsh
+```
+
+Or generate one directly:
+
+```bash
+binnacle completion zsh > ~/.zsh/completions/_binnacle
+binnacle completion bash > ~/.bash_completion.d/binnacle
+binnacle completion fish > ~/.config/fish/completions/binnacle.fish
+```
+
 ## Usage
 
 For the full list of options:
