@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/Traackr/binnacle/config"
-	"github.com/spf13/viper"
 )
 
 // loadFixture points viper at a testdata config and returns the parsed result,
@@ -18,12 +17,7 @@ func loadFixture(t *testing.T, name string) *config.BinnacleConfig {
 	cfgFile = "../testdata/" + name
 	t.Cleanup(func() {
 		cfgFile = prev
-		viper.Reset()
-		// viper.Reset() discards the loglevel pflag binding made once in
-		// root.go's init(), so any later loadConfig() call - ours or another
-		// test file's - would otherwise fail parsing an empty loglevel.
-		// Rebinding here restores the state Reset just wiped.
-		viper.BindPFlag("loglevel", RootCmd.PersistentFlags().Lookup("loglevel"))
+		resetViperKeepingFlags()
 	})
 
 	if err := loadConfig(); err != nil {
@@ -49,9 +43,7 @@ func loadConfigOnly(t *testing.T, name string) {
 	cfgFile = "../testdata/" + name
 	t.Cleanup(func() {
 		cfgFile = prev
-		viper.Reset()
-		// See loadFixture: restores the loglevel pflag binding Reset discards.
-		viper.BindPFlag("loglevel", RootCmd.PersistentFlags().Lookup("loglevel"))
+		resetViperKeepingFlags()
 	})
 
 	if err := loadConfig(); err != nil {
@@ -499,8 +491,7 @@ func TestLoadConfigPropagatesReadError(t *testing.T) {
 	cfgFile = "../testdata/does-not-exist.yml"
 	t.Cleanup(func() {
 		cfgFile = prev
-		viper.Reset()
-		viper.BindPFlag("loglevel", RootCmd.PersistentFlags().Lookup("loglevel"))
+		resetViperKeepingFlags()
 	})
 
 	if err := loadConfig(); err == nil {
@@ -514,8 +505,7 @@ func TestLoadConfigPropagatesLogLevelError(t *testing.T) {
 	cfgFile = "../testdata/demo.yml"
 	t.Cleanup(func() {
 		cfgFile = prev
-		viper.Reset()
-		viper.BindPFlag("loglevel", RootCmd.PersistentFlags().Lookup("loglevel"))
+		resetViperKeepingFlags()
 	})
 
 	if err := loadConfig(); err == nil {

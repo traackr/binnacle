@@ -11,6 +11,16 @@ import (
 	"github.com/spf13/viper"
 )
 
+// resetViperKeepingFlags resets viper for test isolation while preserving the
+// package's pflag bindings (currently just loglevel), which viper.Reset()
+// would otherwise discard. Prefer this over a bare viper.Reset(): a bare reset
+// leaves the next loadConfig() parsing an empty loglevel, which surfaces as a
+// different test failing on every shuffled run.
+func resetViperKeepingFlags() {
+	viper.Reset()
+	viper.BindPFlag("loglevel", RootCmd.PersistentFlags().Lookup("loglevel"))
+}
+
 // withHelm swaps the package's helm executor for the duration of the test and
 // records every invocation. Restores the real executor via t.Cleanup.
 //
@@ -75,12 +85,7 @@ func TestLoadConfigDoesNotWriteToStdout(t *testing.T) {
 	// leak into any later test that reads it.
 	t.Cleanup(func() {
 		cfgFile = prev
-		viper.Reset()
-		// viper.Reset() also discards the loglevel pflag binding made once in
-		// root.go's init(), so any later loadConfig() call would otherwise fail
-		// parsing an empty loglevel. Rebinding here restores the state Reset
-		// just wiped.
-		viper.BindPFlag("loglevel", RootCmd.PersistentFlags().Lookup("loglevel"))
+		resetViperKeepingFlags()
 	})
 
 	r, w, err := os.Pipe()
