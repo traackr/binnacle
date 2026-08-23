@@ -610,8 +610,11 @@ Run:
 git log --format='%s' --no-merges | grep -icE "^bump "
 ```
 
-Expected: a non-zero count (5 at time of writing). These are the dependabot
-subjects that a conventional-commit lint would reject.
+Expected: a non-zero count — 10 at time of writing. (An earlier draft of this
+plan said 5. That number came from a command whose output was piped through
+`head -5`, so the cap was mistaken for the total. Count with `grep -c`, never
+with a truncated listing.) These are the dependabot subjects that a
+conventional-commit lint would reject.
 
 - [ ] **Step 2: Make dependabot emit conventional subjects**
 
