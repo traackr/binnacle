@@ -3,6 +3,20 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [1.1.0](https://github.com/traackr/binnacle/compare/1.0.1...1.1.0) (2026-08-23)
+
+
+### Features
+
+* **ci:** baseline stack improvements ([37e2420](https://github.com/traackr/binnacle/commit/37e242013c5e79b451d9f05e4bba9bcafb3b3c0e))
+* release linux arm64 (and arm64-lxc) binaries ([be4b297](https://github.com/traackr/binnacle/commit/be4b29763d4968304c0bd2d03f77f9b3aae5f5aa))
+* release linux arm64 binaries ([1ab515d](https://github.com/traackr/binnacle/commit/1ab515d82d7c666c425a5d19e774721aa04624d6))
+
+
+### Bug Fixes
+
+* disable component prefix in release-please tag ([985a9d0](https://github.com/traackr/binnacle/commit/985a9d0a2ab505202f019bf48eebba7b7cc67cd0))
+
 ## [0.8.0] - 2022-05-12
 
 - Remove support for Helm 2
