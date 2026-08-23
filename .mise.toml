@@ -18,6 +18,12 @@ run = "scripts/build.sh"
 description = "Run unit tests"
 run = "go test -v ./..."
 
+[tasks.coverage]
+description = "Run unit tests with a coverage profile (coverage.out)"
+# Same invocation CI uses, so a local number always matches the gate. atomic
+# mode keeps the profile valid if -race is ever added.
+run = "go test -covermode=atomic -coverprofile=coverage.out ./..."
+
 [tasks.clean]
 description = "Remove build artifacts"
 run = "rm -rf bin pkg"

@@ -1,0 +1,75 @@
+name: Coverage
+
+# Runs on pull requests to report and gate, and on pushes to main so the base
+# branch has a stored result for `target-project: auto` to compare against.
+# Without the main runs there is no baseline and the project check is inert.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Per the action's documented requirements. On pull requests from forks
+# GITHUB_TOKEN is restricted regardless of what is declared here; the action
+# skips the PR comment and commit status gracefully and still emits the job
+# summary. binnacle is public, so that path is reachable.
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  statuses: write
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up mise (installs go from .mise.toml)
+        uses: jdx/mise-action@v4
+
+      - name: Cache Go modules + build cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Test with coverage
+        run: mise run coverage
+
+      # Emitted before the gate so the numbers are visible even when the gate
+      # fails, and independently of the action being reachable.
+      - name: Coverage summary
+        run: |
+          {
+            echo '### Coverage'
+            echo '```'
+            mise exec -- go tool cover -func=coverage.out
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # SHA-pinned deliberately: this action is pre-1.0 and holds
+      # pull-requests: write + statuses: write. Widely-used first-party actions
+      # above are on tags, which dependabot maintains.
+      - name: Report coverage and enforce thresholds
+        uses: getsentry/codecov-action@eb2b4a6c4be3ecb42867043570579fa3b6879f6e # 0.3.8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: ./coverage.out
+          coverage-format: go
+          # No JUnit output is produced, so test reporting has nothing to read.
+          enable-tests: false
+          post-pr-comment: true
+          # Changed lines are held to 90% from day one. The project total is
+          # only required not to regress, because it starts at ~11.5%: most of
+          # cmd/ shells out to helm through exec.Command with no injection
+          # seam, so it is unreachable by unit tests until that seam exists.
+          # Flip target-project to 90 once the tests land.
+          target-patch: 90
+          target-project: auto
+          threshold-project: 0
+          fail-on-error: true

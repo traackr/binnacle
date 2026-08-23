@@ -108,22 +108,44 @@ Each of these was considered and rejected for a stated reason.
 | `charmbracelet/fang` | Cobra-only starter kit; binnacle is leaving cobra. |
 | Structural re-rendering of helm output | Parsing helm's output into a model couples binnacle to helm's format across versions. Line-oriented decoration is used instead. |
 
-## Delivery: a four-PR stack
+## Delivery: a stack of stacked PRs
 
-Each PR bases on the previous one. PR 1 touches no Go code and can land alone.
+Each PR bases on the previous one. The first three touch no Go code.
 
 ```
-(prerequisite)  rename default branch master -> main
+(prerequisite)  rename default branch master -> main   [done]
 docs/modernization-spec              this document
   └─ test/sample-config-fixtures     synthetic config fixtures
        └─ PR 1  release automation + drop lxc   (no Go changes)
-            └─ PR 2  cobra -> urfave/cli v3 + completions
-                 └─ PR 3  drop viper
-                      └─ PR 4  lipgloss + slog
+            └─ PR 2  coverage reporting + patch gate
+                 └─ PR 3  cobra -> urfave/cli v3 + completions
+                      └─ PR 4  coverage to 90%
+                           └─ PR 5  drop viper
+                                └─ PR 6  lipgloss + slog
 ```
 
 The fixtures land before PR 1 so that every later PR can assert against them.
 They are additive and change no behavior.
+
+### Why coverage is split across PR 2 and PR 4
+
+Coverage starts at 11.5% overall — `config` at 62.5%, `cmd` at **2.8%**. The
+reason `cmd` is near zero is structural, not neglect: `RunHelmCommand` calls
+`exec.LookPath` and `exec.Command` directly, with no injection seam, so 23 of
+the package's tracked functions cannot be reached by a unit test at all.
+
+A single 90% gate therefore cannot be met until PR 3 extracts `internal/helm`
+with a substitutable `runHelm`. Splitting the work avoids writing test
+scaffolding twice:
+
+- **PR 2** lands reporting plus `target-patch: 90`, so every changed line is
+  held to the bar immediately, while `target-project: auto` with
+  `threshold-project: 0` only forbids regression from the current total.
+- **PR 4** backfills tests through the new seam and flips `target-project` to a
+  hard `90`.
+
+The gate is calibrated to what the code can currently support, and ratchets.
+A gate set to an unreachable number is one that gets disabled.
 
 ---
 
