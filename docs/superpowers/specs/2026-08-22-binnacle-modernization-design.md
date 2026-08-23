@@ -57,9 +57,18 @@ coordinated change.
 ### The `-lxc` targets are dead weight
 
 `scripts/build.sh` passes `-tags "lxc"`, but no Go file in the repo carries an
-`lxc` build tag, so `binnacle-linux_<arch>-lxc.tar.gz` is byte-identical to the
-non-lxc asset. Nothing in `infra-platform` or `application-platform` references
-the `-lxc` assets. They MUST be dropped.
+`lxc` build tag, so `binnacle-linux_<arch>-lxc.tar.gz` is *functionally*
+identical to the non-lxc asset: both binaries expose the same 8497 symbols with
+the same types and names.
+
+They are not byte-identical, and cannot be. Go 1.18+ stamps the build settings
+into `runtime/debug.BuildInfo`, so the `-lxc` binary carries an extra
+`build -tags=lxc` line. `go version -m` shows that line as the sole difference
+between the two. A sha256 comparison is therefore the wrong test for
+redundancy; comparing `go tool nm` symbol tables is the right one.
+
+Nothing in `infra-platform` or `application-platform` references the `-lxc`
+assets. They MUST be dropped.
 
 ### lipgloss v2 does not downsample at Render time
 
