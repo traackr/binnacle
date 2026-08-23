@@ -34,8 +34,13 @@ var templateCmd = &cobra.Command{
 	Use:   "template",
 	Short: "Templates out each release, with values, from a given Binnacle configuration.",
 	Long:  ``,
-	PreRun: func(cmd *cobra.Command, args []string) {
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		if err := loadConfig(); err != nil {
+			return err
+		}
 		templateCmdPreRun()
+
+		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return templateCmdRun(args...)

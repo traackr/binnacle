@@ -34,8 +34,13 @@ var diffCmd = &cobra.Command{
 	Use:   "diff",
 	Short: "Displays a diff between the current release and new release of a Helm chart.  (Requires helm-diff plugin)",
 	Long:  ``,
-	PreRun: func(cmd *cobra.Command, args []string) {
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		if err := loadConfig(); err != nil {
+			return err
+		}
 		diffCmdPreRun()
+
+		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return diffCmdRun(args...)

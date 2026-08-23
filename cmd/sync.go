@@ -34,8 +34,13 @@ var syncCmd = &cobra.Command{
 	Use:   "sync",
 	Short: "Syncs each release within the given Binnacle configuration with `helm`",
 	Long:  ``,
-	PreRun: func(cmd *cobra.Command, args []string) {
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		if err := loadConfig(); err != nil {
+			return err
+		}
 		syncCmdPreRun()
+
+		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return syncCmdRun(args...)

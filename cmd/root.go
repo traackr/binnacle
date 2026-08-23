@@ -22,6 +22,7 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -65,37 +66,44 @@ func Execute() {
 }
 
 func init() {
-	cobra.OnInitialize(initConfig)
 	// General Flags
 	RootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "The Binnacle config file (required)")
-	RootCmd.MarkFlagRequired("config")
 
 	// Logging Flags
 	RootCmd.PersistentFlags().String("loglevel", "info", "The level of logging. Acceptable values: debug, info, warn, error, fatal, panic.")
 	viper.BindPFlag("loglevel", RootCmd.PersistentFlags().Lookup("loglevel"))
 }
 
-func initConfig() {
+// loadConfig reads the Binnacle config file named by -c and initializes the
+// logger. Wired as PreRunE on the commands that read config, rather than as a
+// global cobra.OnInitialize hook: commands like completion, help and version
+// need no config, and a global hook made them fail without -c.
+func loadConfig() error {
 	if cfgFile == "" {
-		log.Fatal("no configuration file specified")
+		return errors.New("no configuration file specified; pass -c/--config")
 	}
 
 	viper.SetConfigFile(cfgFile)
 	viper.AddConfigPath(".") // check current dir
 	viper.AutomaticEnv()     // read in environment variables that match
 
-	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err != nil {
-		log.Fatalf("Failed to load configuration file '%s': %v", viper.ConfigFileUsed(), err)
+		return fmt.Errorf("loading configuration file %q: %w", cfgFile, err)
 	}
 
-	fmt.Println("Loaded config file:", viper.ConfigFileUsed())
-
-	// Initialize the logger for all commands to use
-	logLevel, _ := logrus.ParseLevel(viper.GetString("loglevel"))
+	// Initialize the logger for all commands to use.
+	logLevel, err := logrus.ParseLevel(viper.GetString("loglevel"))
+	if err != nil {
+		return fmt.Errorf("parsing loglevel %q: %w", viper.GetString("loglevel"), err)
+	}
 	log.Level = logLevel
-	log.Debug("Logger initialized.")
 
+	// Deliberately the logger and not fmt.Println: binnacle template's stdout
+	// is a manifest stream consumed by kubectl, so nothing may write
+	// diagnostics there.
+	log.Debugf("Loaded config file: %s", viper.ConfigFileUsed())
+
+	return nil
 }
 
 // PluginInstalled returns if the given plugin is installed
@@ -158,8 +166,14 @@ func ReleaseExists(namespace string, release string, args ...string) bool {
 	return exists
 }
 
-// RunHelmCommand runs the given command against helm
-func RunHelmCommand(args ...string) (Result, error) {
+// RunHelmCommand runs the given command against helm.
+//
+// It is a variable rather than a function so tests can substitute the process
+// call. Every command in this package funnels through it, so without this seam
+// none of them can be exercised without a real helm binary on PATH.
+var RunHelmCommand = execHelm
+
+func execHelm(args ...string) (Result, error) {
 	var result Result
 	var outbuf, errbuf bytes.Buffer
 
