@@ -33,8 +33,13 @@ var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Displays the `helm` status for each release within the given Binnacle configuration",
 	Long:  ``,
-	PreRun: func(cmd *cobra.Command, args []string) {
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		if err := loadConfig(); err != nil {
+			return err
+		}
 		statusCmdPreRun()
+
+		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return statusCmdRun(args...)
