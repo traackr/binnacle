@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [1.1.1](https://github.com/traackr/binnacle/compare/1.1.0...1.1.1) (2026-08-26)
+
+
+### Bug Fixes
+
+* scope config loading to the commands that need it ([870ae23](https://github.com/traackr/binnacle/commit/870ae23f694c8d0833b4aea10e953b934a852fd0))
+
 ## [1.1.0](https://github.com/traackr/binnacle/compare/1.0.1...1.1.0) (2026-08-23)
 
 
