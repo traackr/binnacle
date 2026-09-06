@@ -102,7 +102,7 @@ jobs:
       # pull-requests: write + statuses: write. Widely-used first-party actions
       # above are on tags, which dependabot maintains.
       - name: Report coverage and enforce thresholds
-        uses: getsentry/codecov-action@eb2b4a6c4be3ecb42867043570579fa3b6879f6e # 0.3.8
+        uses: getsentry/codecov-action@5f3f449cf9e909fd63513a48f27c57f090a5f321 # 0.4.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           files: ./coverage-relative.out
