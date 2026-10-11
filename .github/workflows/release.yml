@@ -89,7 +89,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up mise (installs go/helm/kustomize/jq from .mise.toml)
-        uses: jdx/mise-action@v4
+        uses: jdx/mise-action@v5
 
       - name: Cache Go modules + build cache
         uses: actions/cache@v6
