@@ -1,0 +1,7 @@
+---
+# Removes the release binnacle.yml installs.
+charts:
+  - name: ./chart
+    namespace: e2e
+    release: e2e-app
+    state: absent

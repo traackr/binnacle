@@ -1,0 +1,4 @@
+apiVersion: v2
+name: e2e-app
+description: Minimal chart for scripts/e2e.sh. Deliberately plain, so anything interesting on the cluster came from the kustomize block.
+version: 0.1.0

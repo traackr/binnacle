@@ -152,6 +152,45 @@ func TestSyncCmdArgsAbsentRelease(t *testing.T) {
 	}
 }
 
+func TestSyncAbsentSkipsAMissingRelease(t *testing.T) {
+	loadFixture(t, "absent.yml")
+
+	calls := withHelm(t, func(args ...string) (Result, error) {
+		if args[0] == "status" {
+			return Result{Stderr: "Error: release: not found\n"}, errors.New("exit status 1")
+		}
+		return Result{Stdout: "NAME\tURL\n"}, nil
+	})
+
+	if err := syncCmdRun(); err != nil {
+		t.Fatalf("syncCmdRun: %v", err)
+	}
+	for _, c := range *calls {
+		if c[0] == "uninstall" {
+			t.Errorf("uninstalled a release that does not exist: %v", c)
+		}
+	}
+}
+
+func TestSyncAbsentFailsWhenStatusFails(t *testing.T) {
+	loadFixture(t, "absent.yml")
+
+	calls := withHelm(t, helmFailOn("status", "NAME\tURL\n"))
+
+	err := syncCmdRun()
+	if err == nil {
+		t.Fatal("syncCmdRun reported success without knowing whether the release exists")
+	}
+	if !strings.Contains(err.Error(), "boom") {
+		t.Errorf("error does not carry helm's failure: %v", err)
+	}
+	for _, c := range *calls {
+		if c[0] == "uninstall" {
+			t.Errorf("uninstalled without knowing the release exists: %v", c)
+		}
+	}
+}
+
 func TestDiffCmdArgs(t *testing.T) {
 	loadFixture(t, "demo.yml")
 
@@ -163,7 +202,6 @@ func TestDiffCmdArgs(t *testing.T) {
 	got := findCall(t, calls, "diff upgrade apps-concourse")
 	for _, want := range []string{
 		"diff upgrade apps-concourse stable/concourse",
-		"--color",
 		"--normalize-manifests",
 		"--install",
 		"--three-way-merge",

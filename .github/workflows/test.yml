@@ -26,5 +26,21 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-go-
 
+    # Without this, the test that runs `binnacle diff` through real helm skips,
+    # and that is the only test able to catch Helm changing how a plugin's flags
+    # are parsed.
+    - name: Install helm-diff
+      run: helm plugin install https://github.com/databus23/helm-diff --version v3.15.15 --verify=false
+
     - name: Test
       run: mise run test
+
+    # binnacle has to keep working on Helm 3, and only these tests run the real
+    # thing. helm-diff 3.15 does not load on Helm 3, so this leg has its own
+    # plugin directory holding the last line that does.
+    - name: Test the real-helm paths on Helm 3
+      env:
+        HELM_DATA_HOME: ${{ runner.temp }}/helm3-data
+      run: |
+        mise x helm@3.17.3 -- helm plugin install https://github.com/databus23/helm-diff --version v3.12.5
+        mise x helm@3.17.3 -- go test -v -shuffle=on -run WithRealHelm ./cmd/

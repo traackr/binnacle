@@ -1,12 +1,13 @@
 # binnacle build toolchain — mise (replaces the old asdf .tool-versions).
 # go builds the binary; helm/kustomize are what binnacle shells out to at
-# runtime (not needed for `go test`, but pinned here for local end-to-end runs
-# and kept in sync with infra-platform's stack). jq is neither a compiler nor
-# a runtime shell-out: scripts/build.sh depends on it to read the version out
-# of .release-please-manifest.json.
+# runtime. `go test` runs against them too: the tests in
+# cmd/kustomize_helm_test.go skip without them, and they are the only ones that
+# catch a change in helm's own contract. jq is neither a compiler nor a runtime
+# shell-out: scripts/build.sh depends on it to read the version out of
+# .release-please-manifest.json.
 [tools]
 go = "1.26.2"
-helm = "4.2.4"
+helm = "4.3.1"
 kustomize = "5.8.1"
 jq = "1.7.1"
 
@@ -29,6 +30,12 @@ description = "Run unit tests with a coverage profile (coverage.out)"
 # Same invocation CI uses, so a local number always matches the gate. atomic
 # mode keeps the profile valid if -race is ever added.
 run = "go test -covermode=atomic -coverprofile=coverage.out ./..."
+
+[tasks.e2e]
+description = "Run binnacle on Helm 3 and Helm 4 against a throwaway minikube cluster"
+# Not in [tools] because only this task needs them: minikube is a large download
+# that CI and most local runs should not pay for.
+run = "mise x minikube@1.39.0 kubectl@1.32.13 -- scripts/e2e.sh"
 
 [tasks.clean]
 description = "Remove build artifacts"

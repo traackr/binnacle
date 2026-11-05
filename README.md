@@ -74,6 +74,62 @@ repositories:
     state: present
 ```
 
+### Kustomize
+
+A chart can carry a `kustomize` block. `template`, `sync` and `diff` then run `kustomize build` as Helm's post-renderer, so `kustomize` has to be on `PATH`.
+
+```yaml
+charts:
+  - name: concourse
+    namespace: apps
+    release: apps-concourse
+    repo: stable
+    state: present
+    kustomize:
+      # Extra manifests to add to the release
+      resources:
+        - extra-configmap.yml
+      patches:
+        # A patch kept in a file
+        - path: patches/add-annotation.yml
+          target:
+            kind: Deployment
+        # A patch written inline
+        - patch: |-
+            - op: replace
+              path: /spec/replicas
+              value: 2
+          target:
+            kind: Deployment
+            name: apps-concourse
+```
+
+Paths are relative to the binnacle file. The files are copied into one temporary directory by basename, so two with the same basename collide.
+
+#### Helm versions
+
+Binnacle works with Helm 3 and Helm 4, and asks `helm version` which it is talking to. Helm 3 is given the path of a script. Helm 4 only accepts the name of a plugin for `--post-renderer`, so binnacle generates one in its temporary directory and points `HELM_PLUGINS` there for that single call. That directory also links your installed plugins, so `helm diff` and the rest keep working, and nothing is added to your real plugin directory.
+
+Moving to Helm 4 changes what a post-renderer sees. `mise run e2e` checks how hooks are routed and what the annotation does against a real cluster:
+
+- **Hooks go through kustomize on Helm 4.** Helm 4 passes hooks to the post-renderer along with the other templates, and its command line has no option to turn that off. A patch can now match a hook resource, and these charts render on Helm 3 but fail on Helm 4 once they have a `kustomize` block:
+  - A chart that declares the same resource as both a hook and a regular template, or as two hooks, fails with `may not add resource with an already registered id`.
+  - A hook that uses `metadata.generateName` fails with `missing metadata.name in object`.
+- **A hook annotation added by kustomize becomes a real hook on Helm 4.** A resource that carries `helm.sh/hook` after kustomize has run is treated as a hook on Helm 4. On Helm 3 it stays in the release manifest and is applied like any other resource. So on the first Helm 4 sync of a release installed on Helm 3, Helm deletes the resource as no longer part of the release, and the sync still exits 0:
+  - With a `post-upgrade` hook, the resource is missing until the hook runs. That comes after any `--wait`, so the gap lasts about as long as the rollout.
+  - With a `pre-upgrade` hook, the hook has already run by then, so the resource stays missing until the next sync brings it back.
+
+  Remove the annotation before moving a release to Helm 4.
+
+`state: absent` leaves a resource with a hook annotation behind on both Helm 3 and Helm 4.
+
+Two more differences that `mise run e2e` does not cover:
+
+- **`template --include-crds` skips kustomize for CRDs on Helm 4.** Helm 3 sends the chart's `crds/` directory through the post-renderer here, and Helm 4 adds those CRDs afterwards. A patch that targets one stops applying without any error, so check this before piping the output to `kubectl`.
+- **`HELM_NAMESPACE` and `HELM_KUBECONTEXT` are not set for the post-renderer** under `template` and `sync` on either version, unless they are already in your environment. helm-diff does set them under `diff`. Binnacle's generated kustomization does not use them.
+
+`binnacle diff` was checked with helm-diff 3.12.5 on Helm 3 and helm-diff 3.15.15 on Helm 4. Helm 3.17.3 refuses to load helm-diff 3.15.15.
+
 ### Using Binnacle
 
 The standard workflow when using binnacle is to use the `template` command to verify the desired configuration files are generated, use the `sync` command to create/update the existing release configuration within Helm, and `status` to get the status of a release.
@@ -335,6 +391,16 @@ To run the unit tests:
 ```script
 make test
 ```
+
+The tests that need `helm`, `kustomize` or the helm-diff plugin skip when they are missing, so install them to get the full run.
+
+To run binnacle against a real cluster on both Helm 3 and Helm 4:
+
+```script
+mise run e2e
+```
+
+This creates a throwaway minikube cluster, with its own kubeconfig so your current context is left alone, and deletes it afterwards. minikube picks its own driver, usually Docker. Set `E2E_MINIKUBE_DRIVER` to choose another one.
 
 [github-releases]: https://github.com/Traackr/binnacle/releases
 [helm]: https://helm.sh/

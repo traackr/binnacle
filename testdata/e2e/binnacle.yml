@@ -1,0 +1,51 @@
+---
+# The release scripts/e2e.sh installs on a throwaway cluster. Each patch uses a
+# different kustomize mechanism, so the script can check each one on live objects.
+charts:
+  - name: ./chart
+    namespace: e2e
+    release: e2e-app
+    state: present
+    values:
+      replicaCount: 1
+    kustomize:
+      resources:
+        - resources/extra-configmap.yml
+        - resources/hook-added-by-kustomize.yml
+        - resources/pre-hook-added-by-kustomize.yml
+      patches:
+        # Strategic merge from a file, targeted by kind and name.
+        - path: patches/deployment-annotations.yml
+          target:
+            kind: Deployment
+            name: e2e-app
+        # Strategic merge from a file, reaching into the pod template.
+        - path: patches/deployment-container.yml
+          target:
+            kind: Deployment
+        # Inline JSON patch with a full group/version/kind target.
+        - patch: |-
+            - op: replace
+              path: /spec/replicas
+              value: 2
+          target:
+            group: apps
+            version: v1
+            kind: Deployment
+            name: e2e-app
+        # Inline JSON patch selected by label.
+        - patch: |-
+            - op: add
+              path: /metadata/labels/patched-by-selector
+              value: "yes"
+          target:
+            kind: Service
+            labelSelector: app=e2e-app
+        # Only Helm 4 sends hooks through the post-renderer, so this patch reaches
+        # the hook Job there and has nothing to match on Helm 3.
+        - patch: |-
+            - op: add
+              path: /metadata/annotations/patched-by-kustomize
+              value: "yes"
+          target:
+            kind: Job

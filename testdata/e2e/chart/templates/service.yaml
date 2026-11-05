@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: e2e-app
+  labels:
+    app: e2e-app
+spec:
+  selector:
+    app: e2e-app
+  ports:
+    - port: 80

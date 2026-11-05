@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: e2e-hook-from-kustomize
+  annotations:
+    # Helm 3 and Helm 4 disagree about this annotation once a post-renderer has
+    # added it. scripts/e2e.sh checks what each one does with it.
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation
+data:
+  added-by: kustomize

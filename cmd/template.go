@@ -132,18 +132,19 @@ func templateCmdRun(args ...string) error {
 			cmdArgs = append(cmdArgs, chart.Version)
 		}
 
+		run := RunHelmCommand
 		if !chart.Kustomize.Empty() {
-			postRenderExecutable, err := SetupKustomize(dir, c.ConfigFile, chart)
+			flags, postRenderRun, err := SetupPostRenderer(dir, c.ConfigFile, chart)
 			if err != nil {
 				return err
 			}
-			cmdArgs = append(cmdArgs, "--post-renderer")
-			cmdArgs = append(cmdArgs, postRenderExecutable)
+			cmdArgs = append(cmdArgs, flags...)
+			run = postRenderRun
 		}
 
 		cmdArgs = append(cmdArgs, args...)
 
-		res, err = RunHelmCommand(cmdArgs...)
+		res, err = run(cmdArgs...)
 		if err != nil {
 			return fmt.Errorf("running helm template for release %s: %s: %w", chart.Release, res.Stderr, err)
 		}
