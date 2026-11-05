@@ -280,3 +280,61 @@ downloaders:
 		t.Errorf("helm did not use the getter plugin: %v", err)
 	}
 }
+
+// writeAbsentConfig returns a config that removes a release which is not installed.
+func writeAbsentConfig(t *testing.T) string {
+	t.Helper()
+
+	configPath := filepath.Join(t.TempDir(), "absent.yml")
+	writeTestFile(t, configPath, `charts:
+  - name: demo
+    namespace: demo
+    release: demo
+    state: absent
+`)
+
+	return configPath
+}
+
+// These pin helm's own words on each Helm major, because sync decides what to do
+// with a release from the text helm prints when it cannot find one.
+func TestSyncAbsentSkipsAMissingReleaseWithRealHelm(t *testing.T) {
+	requireRealTools(t)
+
+	seed := filepath.Join(t.TempDir(), "releases.yaml")
+	writeTestFile(t, seed, "[]\n")
+	t.Setenv("HELM_DRIVER", "memory")
+	t.Setenv("HELM_MEMORY_DRIVER_DATA", seed)
+	useConfigFile(t, writeAbsentConfig(t))
+
+	if _, err := captureStdout(t, func() error { return syncCmdRun() }); err != nil {
+		t.Errorf("syncCmdRun on a release that is not installed: %v", err)
+	}
+}
+
+func TestSyncAbsentFailsWhenHelmCannotAnswerWithRealHelm(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "cluster unreachable", want: "cluster unreachable"},
+		{name: "flag helm status rejects", args: []string{"--atomic"}, want: "unknown flag"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			requireRealTools(t)
+			useConfigFile(t, writeAbsentConfig(t))
+
+			_, err := captureStdout(t, func() error { return syncCmdRun(tc.args...) })
+			if err == nil {
+				t.Fatal("syncCmdRun reported success without knowing whether the release exists")
+			}
+			// Helm 3 and Helm 4 capitalize this message differently.
+			if !strings.Contains(strings.ToLower(err.Error()), tc.want) {
+				t.Errorf("error = %q, want it to mention %q", err, tc.want)
+			}
+		})
+	}
+}

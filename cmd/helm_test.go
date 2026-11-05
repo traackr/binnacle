@@ -209,24 +209,38 @@ func TestSyncRepositoriesRemovesAbsentRepo(t *testing.T) {
 }
 
 func TestReleaseExists(t *testing.T) {
+	exitStatus := errors.New("exit status 1")
+
 	tests := []struct {
-		name   string
-		result Result
-		err    error
-		want   bool
+		name    string
+		result  Result
+		err     error
+		want    bool
+		wantErr string
 	}{
-		{"release found", Result{Stdout: "STATUS: deployed"}, nil, true},
+		{name: "release found", result: Result{Stdout: "STATUS: deployed"}, want: true},
 		{
-			name:   "release genuinely absent",
-			result: Result{Stderr: "Error: release: not found"},
-			err:    errors.New("exit status 1"),
-			// ReleaseExists initialises exists=true and only flips it to false
-			// when stderr is something OTHER than "Error: release: not found",
-			// so a genuinely absent release still reports true. The condition
-			// is inverted relative to the function's name. syncCharts relies on
-			// the current behaviour to decide what to uninstall, so this test
-			// pins it rather than asserting what the name implies.
-			want: true,
+			name:   "release not installed",
+			result: Result{Stderr: "Error: release: not found\n"},
+			err:    exitStatus,
+			want:   false,
+		},
+		{
+			name:    "cluster unreachable",
+			result:  Result{Stderr: "Error: kubernetes cluster unreachable\n"},
+			err:     exitStatus,
+			wantErr: "kubernetes cluster unreachable",
+		},
+		{
+			name:    "flag helm status rejects",
+			result:  Result{Stderr: "Error: unknown flag: --atomic\n"},
+			err:     exitStatus,
+			wantErr: "unknown flag: --atomic",
+		},
+		{
+			name:    "helm did not run",
+			err:     errors.New("searching for helm on PATH"),
+			wantErr: "searching for helm on PATH",
 		},
 	}
 
@@ -234,7 +248,20 @@ func TestReleaseExists(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			withHelm(t, func(...string) (Result, error) { return tc.result, tc.err })
 
-			if got := ReleaseExists("apps", "my-release"); got != tc.want {
+			got, err := ReleaseExists("apps", "my-release")
+			if tc.wantErr != "" {
+				if err == nil {
+					t.Fatalf("ReleaseExists = %v, want an error mentioning %q", got, tc.wantErr)
+				}
+				if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Errorf("error = %q, want it to mention %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ReleaseExists: %v", err)
+			}
+			if got != tc.want {
 				t.Errorf("ReleaseExists = %v, want %v", got, tc.want)
 			}
 		})
@@ -244,7 +271,9 @@ func TestReleaseExists(t *testing.T) {
 func TestReleaseExistsCallsHelmWithNamespaceAndArgs(t *testing.T) {
 	calls := withHelm(t, helmOK("STATUS: deployed"))
 
-	ReleaseExists("apps", "my-release", "--kubeconfig", "/tmp/kube")
+	if _, err := ReleaseExists("apps", "my-release", "--kubeconfig", "/tmp/kube"); err != nil {
+		t.Fatalf("ReleaseExists: %v", err)
+	}
 
 	if len(*calls) != 1 {
 		t.Fatalf("made %d helm calls, want 1", len(*calls))

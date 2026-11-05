@@ -216,9 +216,20 @@ run_suite() {
         "$(live deployment/e2e-app '{.metadata.annotations.revision}')"
 
     reset_project
+
+    # The last --kube-context wins, so this one fails the way an expired login does.
+    out="$(binnacle_run sync binnacle-absent.yml --kube-context no-such-context)"
+    status=$?
+    if [[ $status -ne 0 ]]; then pass "state: absent fails when helm cannot reach the cluster"; else fail "state: absent reported success without reaching the cluster"; fi
+    assert_lacks "that failure does not claim the release is missing" "as the release does not exist" "$out"
+    assert_eq "that failure leaves the release installed" "$RELEASE" "$(helm_query list --short)"
+
     out="$(binnacle_run sync binnacle-absent.yml)"
     assert_eq "sync with state: absent exits cleanly" "0" "$?"
     assert_eq "the release is gone" "" "$(helm_query list --short)"
+    out="$(binnacle_run sync binnacle-absent.yml)"
+    assert_eq "state: absent on a missing release exits cleanly" "0" "$?"
+    assert_contains "state: absent says it skipped the missing release" "as the release does not exist" "$out"
     assert_contains "the Deployment is gone" "NotFound" "$(live deployment/e2e-app '{.metadata.name}')"
     assert_contains "the extra resource is gone" "NotFound" \
         "$(live configmap/e2e-extra-from-kustomize '{.metadata.name}')"

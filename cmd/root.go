@@ -143,10 +143,11 @@ func PluginInstalled(plugin string) (bool, error) {
 	return false, nil
 }
 
-func ReleaseExists(namespace string, release string, args ...string) bool {
-	var exists = true
-	var err error
-	var res Result
+// ReleaseExists reports whether the release is installed. Only helm's own "not
+// found" means it is not. Any other failure is returned, because an unreachable
+// cluster says nothing about the release, and treating it as absent would skip the
+// uninstall and report success.
+func ReleaseExists(namespace string, release string, args ...string) (bool, error) {
 	var cmdArgs []string
 
 	cmdArgs = append(cmdArgs, "status")
@@ -156,14 +157,15 @@ func ReleaseExists(namespace string, release string, args ...string) bool {
 	cmdArgs = append(cmdArgs, args...)
 
 	// Get the status of the release for the namespace
-	res, err = RunHelmCommand(cmdArgs...)
-	if err != nil {
-		if res.Stderr != "Error: release: not found" {
-			exists = false
-		}
+	res, err := RunHelmCommand(cmdArgs...)
+	if err == nil {
+		return true, nil
+	}
+	if strings.Contains(res.Stderr, "release: not found") {
+		return false, nil
 	}
 
-	return exists
+	return false, fmt.Errorf("checking whether release %s exists: %s: %w", release, res.Stderr, err)
 }
 
 // RunHelmCommand runs the given command against helm.
