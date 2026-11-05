@@ -89,6 +89,8 @@ func syncCharts(charts []config.ChartConfig, configFile string, args ...string) 
 
 		log.Debugf("Processing chart: %s", chart.ChartURL())
 
+		run := RunHelmCommand
+
 		if chart.State == config.StatePresent {
 			// Create a temp working directory
 			dir, err := SetupBinnacleWorkingDir()
@@ -123,12 +125,12 @@ func syncCharts(charts []config.ChartConfig, configFile string, args ...string) 
 			}
 
 			if !chart.Kustomize.Empty() {
-				postRenderExecutable, err := SetupKustomize(dir, configFile, chart)
+				flags, postRenderRun, err := SetupPostRenderer(dir, configFile, chart)
 				if err != nil {
 					return err
 				}
-				cmdArgs = append(cmdArgs, "--post-renderer")
-				cmdArgs = append(cmdArgs, postRenderExecutable)
+				cmdArgs = append(cmdArgs, flags...)
+				run = postRenderRun
 			}
 		} else {
 
@@ -147,7 +149,7 @@ func syncCharts(charts []config.ChartConfig, configFile string, args ...string) 
 
 		cmdArgs = append(cmdArgs, args...)
 
-		res, err := RunHelmCommand(cmdArgs...)
+		res, err := run(cmdArgs...)
 		if err != nil {
 			return fmt.Errorf("running helm sync for release %s: %s: %w", chart.Release, res.Stderr, err)
 		}

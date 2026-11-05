@@ -16,8 +16,8 @@ New fixtures SHOULD carry a header comment saying which code path they exercise
 and why, so a later reader can tell an intentional edge case from an accident.
 
 `chart-url-variants.yml`, `deep-values.yml`, `kustomize-inline-patches.yml`,
-`multi-chart.yml`, `unknown-key.yml`, and `kustomize/config.yml` are groundwork
-for a later PR: none of them is loaded by any test yet.
+`multi-chart.yml`, and `unknown-key.yml` are groundwork for a later PR: none of
+them is loaded by any test yet.
 
 ## Positive fixtures
 
@@ -55,9 +55,24 @@ directory rather than living flat alongside the others.
 
 | File | Role |
 | --- | --- |
-| `config.yml` | The binnacle config. Groundwork for a later PR; not yet loaded by any test. |
+| `config.yml` | The binnacle config. |
 | `extra-configmap.yml` | A manifest merged in via `kustomize.resources`. |
 | `api-resources.yml` | A strategic-merge patch referenced by `kustomize.patches[].path`. |
 
 The two manifests are Kubernetes resources, not binnacle configs; a test that
 loads them as binnacle configs is testing the wrong thing.
+
+## The `e2e/` directory
+
+What `scripts/e2e.sh` (`mise run e2e`) installs on a throwaway minikube cluster.
+No Go test loads these. The chart is deliberately plain, and each patch in
+`binnacle.yml` uses a different kustomize mechanism, so the script can check each
+one on live objects.
+
+| File | Role |
+| --- | --- |
+| `binnacle.yml` | Installs the release, with one `kustomize` block using every patch style. |
+| `binnacle-absent.yml` | Removes that release. |
+| `chart/` | A Deployment, a Service and a hook Job. |
+| `patches/` | The strategic-merge patches `binnacle.yml` refers to by path. |
+| `resources/` | The manifests `binnacle.yml` adds through `kustomize.resources`. |

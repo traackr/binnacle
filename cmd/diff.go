@@ -61,6 +61,13 @@ func diffCmdPreRun() {
 func diffCmdRun(args ...string) error {
 	var err error
 
+	// Color is requested through the environment because Helm 4 has a global
+	// --color flag that takes a value and also looks for it in a plugin's
+	// arguments, so helm-diff's own --color would swallow the next argument.
+	if _, set := os.LookupEnv("HELM_DIFF_COLOR"); !set {
+		defer setenvTemporarily("HELM_DIFF_COLOR", "true")()
+	}
+
 	// Detect if the diff plugin is installed.
 	pluginInstalled, err := PluginInstalled("diff")
 	if err != nil {
@@ -112,7 +119,6 @@ func diffCmdRun(args ...string) error {
 		cmdArgs = append(cmdArgs, "upgrade")
 		cmdArgs = append(cmdArgs, chart.Release)
 		cmdArgs = append(cmdArgs, chart.ChartURL())
-		cmdArgs = append(cmdArgs, "--color")
 		cmdArgs = append(cmdArgs, "--normalize-manifests")
 		cmdArgs = append(cmdArgs, "--install")
 		cmdArgs = append(cmdArgs, "--three-way-merge")
@@ -129,17 +135,18 @@ func diffCmdRun(args ...string) error {
 			cmdArgs = append(cmdArgs, chart.Version)
 		}
 
+		run := RunHelmCommand
 		if !chart.Kustomize.Empty() {
-			postRenderExecutable, err := SetupKustomize(dir, c.ConfigFile, chart)
+			flags, postRenderRun, err := SetupPostRenderer(dir, c.ConfigFile, chart)
 			if err != nil {
 				return err
 			}
-			cmdArgs = append(cmdArgs, "--post-renderer")
-			cmdArgs = append(cmdArgs, postRenderExecutable)
+			cmdArgs = append(cmdArgs, flags...)
+			run = postRenderRun
 		}
 
 		cmdArgs = append(cmdArgs, args...)
-		res, err = RunHelmCommand(cmdArgs...)
+		res, err = run(cmdArgs...)
 		if err != nil {
 			return fmt.Errorf("running helm diff for release %s: %s: %w", chart.Release, res.Stderr, err)
 		}

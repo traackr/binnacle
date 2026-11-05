@@ -163,7 +163,6 @@ func TestDiffCmdArgs(t *testing.T) {
 	got := findCall(t, calls, "diff upgrade apps-concourse")
 	for _, want := range []string{
 		"diff upgrade apps-concourse stable/concourse",
-		"--color",
 		"--normalize-manifests",
 		"--install",
 		"--three-way-merge",

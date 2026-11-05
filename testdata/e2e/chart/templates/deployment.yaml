@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: e2e-app
+  labels:
+    app: e2e-app
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: e2e-app
+  template:
+    metadata:
+      labels:
+        app: e2e-app
+    spec:
+      containers:
+        - name: app
+          image: {{ .Values.image }}
+          command: ["sleep", "3600"]

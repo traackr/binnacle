@@ -369,8 +369,8 @@ func SetupKustomize(tmpDir string, configPath string, chart config.ChartConfig) 
 	// NOTE: The script will be executed by Helm, using the current PATH and current working directory
 	script := fmt.Sprintf(`#!/bin/sh
 cat > %s
-exec %s build %s
-`, filepath.Join(tmpDir, helmTemplateFilename), kustomize, tmpDir)
+exec %s build %s 2> %s
+`, filepath.Join(tmpDir, helmTemplateFilename), kustomize, tmpDir, filepath.Join(tmpDir, kustomizeStderrFile))
 	scriptPath := filepath.Join(tmpDir, "exec-kustomize.sh")
 	err = os.WriteFile(scriptPath, []byte(script), 0755)
 	if err != nil {
